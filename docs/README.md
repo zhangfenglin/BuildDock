@@ -25,8 +25,11 @@ BuildDock 是一个**用户设备注册 + 远程任务调度 + CLI Agent 执行 
 | [后端架构（Go）](./architecture/backend.md) | gqlgen、分层、调度器 |
 | [CLI 架构（Go）](./architecture/cli.md) | builddock-agent 设计 |
 | [前端架构（Vite + TS）](./architecture/frontend.md) | Dashboard、urql |
+| [数据库设计](./architecture/database.md) | PostgreSQL 表结构与索引 |
+| [认证与授权](./architecture/auth.md) | Token、RBAC |
+| [调度器设计](./architecture/scheduler.md) | Placement、Lease |
 | [基础设施与部署](./architecture/infrastructure.md) | Docker、CI/CD |
-| [端到端集成](./architecture/integration.md) | 三端协作链路 |
+| [端到端集成](./architecture/integration.md) | 三端协作与联调 |
 
 ### 调研
 

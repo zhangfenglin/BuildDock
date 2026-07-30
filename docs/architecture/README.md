@@ -11,6 +11,9 @@ BuildDock 采用 **Monorepo** 组织，后端与 CLI 使用 **Go**，前端使�
 | [CLI Agent 架构（Go）](./cli.md) | builddock-agent 模块、Executor、运行时 |
 | [前端架构（Vite + TS）](./frontend.md) | Web Dashboard、GraphQL 客户端、页面结构 |
 | [基础设施与部署](./infrastructure.md) | PostgreSQL、Redis、对象存储、Docker、CI |
+| [数据库设计](./database.md) | PostgreSQL 表结构、索引、队列 SQL |
+| [认证与授权](./auth.md) | Token 模型、RBAC、限流 |
+| [调度器设计](./scheduler.md) | Placement 匹配、Lease、后台 Worker |
 | [端到端集成](./integration.md) | 三端协作链路、联调清单 |
 
 ## 技术栈总览

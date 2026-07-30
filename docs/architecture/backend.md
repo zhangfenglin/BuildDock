@@ -284,7 +284,7 @@ model:
 | `artifacts` | 产物元数据 |
 | `webhook_deliveries` | Webhook 投递记录 |
 
-详细表结构见后续 `docs/architecture/database.md`（待编写）。
+详细表结构见 [数据库设计](./database.md)。调度逻辑见 [调度器设计](./scheduler.md)。认证见 [认证与授权](./auth.md)。
 
 ## 9. 配置项
 
