@@ -40,7 +40,7 @@ BuildDock 提供统一的**控制面**，连接「任意触发源」与「用户
 ### 3.1 平台侧
 
 - 设备注册与审批（可选）
-- 通用任务创建 API
+- 通用任务创建 GraphQL API
 - 基于 Capability 的任务路由
 - 任务生命周期管理（排队、分配、执行、重试、超时、取消）
 - 日志流式推送、产物存储
@@ -91,7 +91,7 @@ BuildDock 提供统一的**控制面**，连接「任意触发源」与「用户
 | 结果 | exit_code、stdout/stderr、artifacts |
 | 事件 | `status_changed`、`log` |
 | 信任级别 | 仅 `trusted` |
-| 触发 | REST API + Webhook |
+| 触发 | GraphQL API + Webhook |
 | 客户端 | CLI Agent + Web Dashboard |
 
 ### 第二期

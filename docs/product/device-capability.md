@@ -85,25 +85,35 @@ stateDiagram-v2
 
 ### 3.1 请求
 
-```http
-POST /v1/devices/register
-Content-Type: application/json
+GraphQL Mutation `registerDevice`（使用 Registration Token 认证）：
+
+```graphql
+mutation Register($input: RegisterDeviceInput!) {
+  registerDevice(input: $input) {
+    device { id approvalStatus }
+    deviceToken
+    pollIntervalMs
+    heartbeatIntervalMs
+  }
+}
 ```
+
+Variables：
 
 ```json
 {
-  "registration_token": "reg_xxx",
-  "fingerprint": {
-    "machine_id": "a1b2c3...",
-    "hostname": "dev-mac.local",
-    "platform": "darwin",
-    "arch": "arm64"
-  },
-  "name": "macbook-pro-m3",
-  "labels": {
-    "owner": "alice"
-  },
-  "capabilities": {}
+  "input": {
+    "registrationToken": "reg_xxx",
+    "fingerprint": {
+      "machineId": "a1b2c3...",
+      "hostname": "dev-mac.local",
+      "platform": "darwin",
+      "arch": "arm64"
+    },
+    "name": "macbook-pro-m3",
+    "labels": { "owner": "alice" },
+    "capabilities": {}
+  }
 }
 ```
 
@@ -111,13 +121,21 @@ Content-Type: application/json
 
 ### 3.2 响应
 
+`registerDevice` 返回：
+
 ```json
 {
-  "device_id": "dev_01JABC...",
-  "device_token": "dtok_xxx",
-  "approval_status": "pending",
-  "poll_interval_ms": 3000,
-  "heartbeat_interval_ms": 30000
+  "data": {
+    "registerDevice": {
+      "device": {
+        "id": "dev_01JABC...",
+        "approvalStatus": "PENDING"
+      },
+      "deviceToken": "dtok_xxx",
+      "pollIntervalMs": 3000,
+      "heartbeatIntervalMs": 30000
+    }
+  }
 }
 ```
 
@@ -129,27 +147,26 @@ Content-Type: application/json
 
 ### 3.3 注册 Token 获取
 
-```http
-POST /v1/devices/registration-tokens
-Authorization: Bearer api_xxx
-```
+GraphQL Mutation `createRegistrationToken`（API Key 认证）：
 
-```json
-{
-  "org_id": "org_xxx",
-  "expires_in_sec": 3600,
-  "labels": {
-    "owner": "alice"
+```graphql
+mutation CreateRegToken($input: CreateRegistrationTokenInput!) {
+  createRegistrationToken(input: $input) {
+    token
+    expiresAt
   }
 }
 ```
 
-响应：
+Variables：
 
 ```json
 {
-  "token": "reg_xxx",
-  "expires_at": "2026-07-30T16:00:00Z"
+  "input": {
+    "orgId": "org_xxx",
+    "expiresInSec": 3600,
+    "labels": { "owner": "alice" }
+  }
 }
 ```
 
@@ -258,22 +275,33 @@ Authorization: Bearer api_xxx
 
 不必每次全量上报：
 
-```http
-POST /v1/devices/{device_id}/heartbeat
-Authorization: Bearer dtok_xxx
+GraphQL Mutation `heartbeat`：
+
+```graphql
+mutation Heartbeat($input: HeartbeatInput!) {
+  heartbeat(input: $input) {
+    pollIntervalMs
+    heartbeatIntervalMs
+  }
+}
 ```
+
+Variables：
 
 ```json
 {
-  "generation": 43,
-  "status": "online",
-  "load": {
-    "cpu_usage": 0.41,
-    "memory_usage": 0.58,
-    "active_tasks": 2,
-    "available_slots": 1
-  },
-  "running_task_ids": ["task_01...", "task_02..."]
+  "input": {
+    "deviceId": "dev_01JABC...",
+    "generation": 43,
+    "status": "ONLINE",
+    "load": {
+      "cpuUsage": 0.41,
+      "memoryUsage": 0.58,
+      "activeTasks": 2,
+      "availableSlots": 1
+    },
+    "runningTaskIds": ["task_01...", "task_02..."]
+  }
 }
 ```
 

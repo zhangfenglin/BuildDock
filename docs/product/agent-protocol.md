@@ -4,47 +4,54 @@ Schema Version: `1.0`
 
 CLI Agent（`builddock-agent`）与平台之间的交互协议。
 
+> Agent 通过 **GraphQL Mutation** 与平台通信，Endpoint 为 `POST /graphql`。  
+> 完整 Schema 见 [`graphql-schema.graphql`](../api/graphql-schema.graphql)。
+
 ## 1. 设计原则
 
 | 原则 | 说明 |
 |------|------|
 | 出站优先 | Agent 主动连平台，无需开入站端口 |
-| 长轮询领任务 | MVP 使用 HTTP 长轮询，简单可靠 |
+| GraphQL Mutation | 全部 Agent 操作走 Mutation，统一契约 |
+| 长轮询领任务 | `pollTask` mutation，服务端阻塞至有任务或 timeout |
 | Lease 防重复 | 任务分配带 lease，过期可 re-queue |
-| 流式上报 | 日志逐行上报，支持实时追踪 |
-| 幂等完成 | complete 请求带 lease_id，防重复提交 |
+| 流式上报 | `reportEvents` 逐条/批量上报日志 |
+| 幂等完成 | `completeTask` 带 leaseId，防重复提交 |
 
 ## 2. 认证
 
-所有 Agent API 使用 Device Token：
+所有 Agent Mutation 使用 Device Token：
 
 ```http
+POST /graphql
 Authorization: Bearer dtok_xxx
+Content-Type: application/json
 ```
 
-Token 在 [设备注册](./device-capability.md#3-设备注册) 时获取。
+Token 在 `registerDevice` mutation 时获取，见 [设备注册](./device-capability.md#3-设备注册)。
 
 ## 3. Agent 生命周期
 
 ```mermaid
 sequenceDiagram
     participant CLI as builddock-agent
-    participant API as BuildDock API
+    participant GQL as GraphQL /graphql
 
-    CLI->>API: POST /v1/devices/register
-    API-->>CLI: device_id, device_token
+    CLI->>GQL: mutation registerDevice
+    GQL-->>CLI: deviceToken, deviceId
 
     loop 运行中
-        CLI->>API: POST /v1/devices/{id}/capabilities
-        CLI->>API: POST /v1/devices/{id}/heartbeat
-        CLI->>API: POST /v1/devices/{id}/tasks:poll (long poll)
+        CLI->>GQL: mutation reportCapabilities
+        CLI->>GQL: mutation heartbeat
+        CLI->>GQL: mutation pollTask (long poll)
         alt 有任务
-            API-->>CLI: task + lease
-            CLI->>API: POST /v1/tasks/{id}/events (stream)
-            CLI->>API: POST /v1/tasks/{id}/lease:renew
-            CLI->>API: POST /v1/tasks/{id}/complete
+            GQL-->>CLI: task + lease
+            CLI->>GQL: mutation acceptTask
+            CLI->>GQL: mutation reportEvents (stream)
+            CLI->>GQL: mutation renewLease
+            CLI->>GQL: mutation completeTask
         else 无任务
-            API-->>CLI: 204 No Content
+            GQL-->>CLI: task: null
         end
     end
 ```
@@ -69,238 +76,257 @@ builddock-agent stop
 
 1. 采集本机 fingerprint
 2. 探测 handlers、runtimes
-3. 调用 `POST /v1/devices/register`
-4. 将 `device_token` 写入本地配置（`~/.builddock/config.yaml`）
+3. 调用 `registerDevice` mutation
+4. 将 `deviceToken` 写入本地配置（`~/.builddock/config.yaml`）
 
 ### 4.2 start
 
 1. 加载本地配置
-2. 上报完整 Capability Report
-3. 启动 heartbeat goroutine
-4. 进入 poll loop
+2. 调用 `reportCapabilities` mutation
+3. 启动 heartbeat 循环
+4. 进入 `pollTask` 循环
 
-## 5. API 交互详情
+## 5. GraphQL 交互详情
 
-### 5.1 上报 Capability
+### 5.1 设备注册
 
-```http
-POST /v1/devices/{device_id}/capabilities
-Authorization: Bearer dtok_xxx
-Content-Type: application/json
-```
-
-Body：[Capability Report](./device-capability.md#4-capability-report)
-
-响应：`204 No Content`
-
-### 5.2 心跳
-
-```http
-POST /v1/devices/{device_id}/heartbeat
-Authorization: Bearer dtok_xxx
-```
-
-Body：见 [心跳](./device-capability.md#5-心跳轻量-capability)
-
-响应：
-
-```json
-{
-  "poll_interval_ms": 3000,
-  "heartbeat_interval_ms": 30000
+```graphql
+mutation Register($input: RegisterDeviceInput!) {
+  registerDevice(input: $input) {
+    device { id approvalStatus }
+    deviceToken
+    pollIntervalMs
+    heartbeatIntervalMs
+  }
 }
 ```
 
-平台可在响应中动态调整间隔。
-
-### 5.3 领取任务（长轮询）
-
-```http
-POST /v1/devices/{device_id}/tasks:poll
-Authorization: Bearer dtok_xxx
-Content-Type: application/json
-```
-
-请求：
+Variables：
 
 ```json
 {
-  "generation": 43,
-  "available_slots": 1,
-  "supported_types": ["shell", "script"]
-}
-```
-
-| 字段 | 说明 |
-|------|------|
-| `generation` | 当前设备 generation |
-| `available_slots` | 可接收的新任务数 |
-| `supported_types` | 当前可用的 task type |
-
-响应（有任务，200）：
-
-```json
-{
-  "task": {
-    "id": "task_01JXYZ...",
-    "lease": {
-      "lease_id": "lease_xxx",
-      "expires_at": "2026-07-30T15:10:00Z"
+  "input": {
+    "registrationToken": "reg_xxx",
+    "fingerprint": {
+      "machineId": "a1b2c3...",
+      "hostname": "dev-mac.local",
+      "platform": "darwin",
+      "arch": "arm64"
     },
-    "spec": {},
-    "resolved_secrets": {
-      "NPM_TOKEN": "secret-value"
+    "name": "macbook-pro-m3",
+    "labels": { "owner": "alice" },
+    "capabilities": {}
+  }
+}
+```
+
+### 5.2 上报 Capability
+
+```graphql
+mutation ReportCapabilities($input: ReportCapabilitiesInput!) {
+  reportCapabilities(input: $input) {
+    success
+    errors { code message }
+  }
+}
+```
+
+Input 结构见 [Capability Report](./device-capability.md#4-capability-report)（字段名转为 camelCase）。
+
+### 5.3 心跳
+
+```graphql
+mutation Heartbeat($input: HeartbeatInput!) {
+  heartbeat(input: $input) {
+    pollIntervalMs
+    heartbeatIntervalMs
+  }
+}
+```
+
+Variables：
+
+```json
+{
+  "input": {
+    "deviceId": "dev_01JABC...",
+    "generation": 43,
+    "status": "ONLINE",
+    "load": {
+      "cpuUsage": 0.41,
+      "memoryUsage": 0.58,
+      "activeTasks": 2,
+      "availableSlots": 1
+    },
+    "runningTaskIds": ["task_01..."]
+  }
+}
+```
+
+### 5.4 领取任务（长轮询）
+
+```graphql
+mutation PollTask($input: PollTaskInput!) {
+  pollTask(input: $input) {
+    task {
+      id
+      lease { leaseId expiresAt }
+      spec
+      resolvedSecrets
     }
   }
 }
 ```
 
-响应（无任务，204）：Agent 等待 `poll_interval_ms` 后重试。
-
-长轮询超时建议：30–60 秒。
-
-### 5.4 接受任务
-
-Agent 收到任务后，应调用 accept（将 status 从 assigned → running）：
-
-```http
-POST /v1/tasks/{task_id}/accept
-Authorization: Bearer dtok_xxx
-```
+Variables：
 
 ```json
 {
-  "lease_id": "lease_xxx",
-  "generation": 43
-}
-```
-
-响应：`204 No Content`
-
-若 lease 无效或 generation 不匹配，返回 `409 Conflict`。
-
-### 5.5 续租
-
-长任务执行期间定期续租（建议每 30 秒或 lease 过期前 50%）：
-
-```http
-POST /v1/tasks/{task_id}/lease:renew
-Authorization: Bearer dtok_xxx
-```
-
-```json
-{
-  "lease_id": "lease_xxx",
-  "generation": 43
-}
-```
-
-响应：
-
-```json
-{
-  "lease_id": "lease_xxx",
-  "expires_at": "2026-07-30T15:15:00Z"
-}
-```
-
-### 5.6 上报事件
-
-```http
-POST /v1/tasks/{task_id}/events
-Authorization: Bearer dtok_xxx
-Content-Type: application/json
-```
-
-单条：
-
-```json
-{
-  "type": "log",
-  "data": {
-    "stream": "stdout",
-    "line": "PASS src/utils.test.ts"
+  "input": {
+    "deviceId": "dev_01JABC...",
+    "generation": 43,
+    "availableSlots": 1,
+    "supportedTypes": ["SHELL", "SCRIPT"],
+    "timeoutMs": 30000
   }
 }
 ```
 
-批量（可选优化）：
+- 有任务：返回 `task`
+- 无任务：`task` 为 `null`，Agent 等待 `pollIntervalMs` 后重试
 
-```json
-{
-  "events": [
-    { "type": "log", "data": { "stream": "stdout", "line": "..." } },
-    { "type": "progress", "data": { "percent": 50, "message": "Testing..." } }
-  ]
+### 5.5 接受任务
+
+```graphql
+mutation AcceptTask($input: AcceptTaskInput!) {
+  acceptTask(input: $input) {
+    success
+    errors { code message }
+  }
 }
 ```
 
-### 5.7 上传产物
-
-大文件走 multipart 或预签名 URL：
-
-```http
-POST /v1/tasks/{task_id}/artifacts
-Authorization: Bearer dtok_xxx
-Content-Type: multipart/form-data
-```
-
-或使用预签名 URL 流程：
-
-```http
-POST /v1/tasks/{task_id}/artifacts:prepare
-```
+Variables：
 
 ```json
 {
-  "name": "coverage",
-  "size_bytes": 1048576,
-  "content_type": "application/gzip"
+  "input": {
+    "taskId": "task_01JXYZ...",
+    "leaseId": "lease_xxx",
+    "generation": 43
+  }
 }
 ```
 
-响应：
+lease 无效或 generation 不匹配：`errors[].code = CONFLICT`。
 
-```json
-{
-  "upload_url": "https://storage.example.com/...",
-  "artifact_id": "art_xxx"
+### 5.6 续租
+
+```graphql
+mutation RenewLease($input: RenewLeaseInput!) {
+  renewLease(input: $input) {
+    lease { leaseId expiresAt }
+  }
 }
 ```
 
-Agent PUT 文件到 `upload_url`，再调用 confirm。
+建议每 30 秒或 lease 过期前 50% 续租一次。
 
-### 5.8 提交结果
+### 5.7 上报事件
 
-```http
-POST /v1/tasks/{task_id}/complete
-Authorization: Bearer dtok_xxx
-Content-Type: application/json
+单条或多条：
+
+```graphql
+mutation ReportEvents($input: ReportEventsInput!) {
+  reportEvents(input: $input) {
+    success
+  }
+}
 ```
+
+Variables：
 
 ```json
 {
-  "lease_id": "lease_xxx",
-  "result": {
-    "status": "succeeded",
-    "exit_code": 0,
-    "started_at": "2026-07-30T15:00:05Z",
-    "finished_at": "2026-07-30T15:04:32Z",
-    "duration_ms": 267000,
-    "output": {
-      "stdout_ref": "log://task_01JXYZ/stdout",
-      "stderr_ref": "log://task_01JXYZ/stderr"
-    },
-    "artifacts": [
-      { "name": "coverage", "artifact_id": "art_xxx" }
+  "input": {
+    "taskId": "task_01JXYZ...",
+    "events": [
+      {
+        "type": "LOG",
+        "data": { "stream": "stdout", "line": "PASS utils.test.ts" }
+      },
+      {
+        "type": "PROGRESS",
+        "data": { "percent": 50, "message": "Testing..." }
+      }
     ]
   }
 }
 ```
 
-响应：`204 No Content`
+### 5.8 上传产物
 
-重复 complete 返回 `409 Conflict`（幂等保护）。
+```graphql
+mutation PrepareUpload($input: PrepareArtifactUploadInput!) {
+  prepareArtifactUpload(input: $input) {
+    artifactId
+    uploadUrl
+  }
+}
+```
+
+流程：
+
+1. `prepareArtifactUpload` → 获取 `uploadUrl`
+2. `HTTP PUT` 文件到 `uploadUrl`
+3. `confirmArtifactUpload` 确认
+4. `completeTask` 时传入 `artifactIds`
+
+```graphql
+mutation ConfirmUpload($input: ConfirmArtifactUploadInput!) {
+  confirmArtifactUpload(input: $input) {
+    id
+    name
+    url
+  }
+}
+```
+
+### 5.9 提交结果
+
+```graphql
+mutation CompleteTask($input: CompleteTaskInput!) {
+  completeTask(input: $input) {
+    success
+    errors { code message }
+  }
+}
+```
+
+Variables：
+
+```json
+{
+  "input": {
+    "taskId": "task_01JXYZ...",
+    "leaseId": "lease_xxx",
+    "result": {
+      "status": "SUCCEEDED",
+      "exitCode": 0,
+      "startedAt": "2026-07-30T15:00:05Z",
+      "finishedAt": "2026-07-30T15:04:32Z",
+      "durationMs": 267000,
+      "output": {
+        "stdoutRef": "log://task_01JXYZ/stdout",
+        "stderrRef": "log://task_01JXYZ/stderr"
+      },
+      "artifactIds": ["art_xxx"]
+    }
+  }
+}
+```
+
+重复 complete：`errors[].code = CONFLICT`。
 
 ## 6. Executor 接口（Agent 内部）
 
@@ -326,7 +352,7 @@ type EventSink interface {
 
 type ExecResult struct {
     ExitCode   int
-    Structured map[string]any  // 可选结构化输出
+    Structured map[string]any
 }
 ```
 
@@ -341,31 +367,47 @@ type ExecResult struct {
 
 ```
 1. 解析 spec.type → 选择 Executor
-2. 创建工作目录（若 spec.working_dir 不存在则报错或使用默认）
-3. 注入 env + secrets
-4. 启动进程，stdout/stderr 逐行 → EventSink.Log
-5. 等待进程结束或 ctx 超时
-6. 收集 artifacts（glob match spec.artifacts.collect）
-7. 上传 artifacts
-8. 构造 TaskResult 并 complete
+2. 创建工作目录
+3. 注入 env + resolvedSecrets
+4. 启动进程，stdout/stderr → reportEvents(LOG)
+5. 等待进程结束或超时
+6. 收集 artifacts → prepareArtifactUpload → PUT → confirm
+7. completeTask
 ```
 
-## 7. 错误处理
+## 7. GraphQL 客户端（Agent 内部）
+
+Agent 推荐使用轻量 HTTP 客户端发送 GraphQL POST，无需完整 GraphQL 库：
+
+```go
+type GraphQLClient struct {
+    Endpoint string
+    Token    string
+}
+
+func (c *GraphQLClient) Mutate(ctx context.Context, query string, variables any, result any) error {
+    // POST /graphql with Authorization: Bearer dtok_xxx
+}
+```
+
+或使用 `shurcooL/graphql` 生成类型安全客户端。
+
+## 8. 错误处理
 
 | 场景 | Agent 行为 |
 |------|-----------|
-| 网络中断 | 本地缓冲日志，重连后继续上报；lease 过期则停止执行 |
-| 执行超时 | kill 进程，complete with status=failed, code=TIMED_OUT |
-| 平台 cancel | poll 或 event 收到 cancel → kill 进程，complete with cancelled |
-| lease 续租失败 | 停止执行，不上报 complete（平台会 re-queue） |
-| 进程非零退出 | complete with status=failed, exit_code=N |
+| GraphQL 网络中断 | 本地缓冲 events，重连后补发 |
+| 执行超时 | kill 进程，completeTask status=FAILED |
+| 平台 cancel | 下次 pollTask/heartbeat 感知 → kill，completeTask CANCELLED |
+| renewLease 失败 | 停止执行，不 complete（平台 re-queue） |
+| 进程非零退出 | completeTask status=FAILED |
 
-## 8. 本地配置
+## 9. 本地配置
 
 `~/.builddock/config.yaml`：
 
 ```yaml
-hub_url: https://api.builddock.example.com
+graphql_url: https://api.builddock.example.com/graphql
 device_id: dev_01JABC...
 device_token: dtok_xxx
 name: macbook-pro-m3
@@ -374,22 +416,22 @@ max_concurrent_tasks: 3
 log_level: info
 ```
 
-## 9. 安全
+## 10. 安全
 
 | 措施 | 说明 |
 |------|------|
 | Token 存储 | 本地文件权限 0600 |
-| Secrets | 仅在任务执行期间存在于内存，完成后清零 |
-| 命令执行 | MVP 直接 shell；V2 可选 sandbox（nsjail / container） |
-| 不受信任务 | `trust_level=untrusted` 时 Agent 可拒绝（默认拒绝） |
+| Secrets | 来自 `resolvedSecrets`，仅在内存中，完成后清零 |
+| 命令执行 | MVP 直接 shell；V2 sandbox |
+| 不受信任务 | `trustLevel=UNTRUSTED` 时 Agent 可拒绝 |
 
-## 10. MVP 裁剪
+## 11. MVP 裁剪
 
 | 能力 | MVP | V2 |
 |------|-----|-----|
-| 长轮询 | ✅ | |
-| WebSocket 双向 | | ✅ |
-| 批量 events | | ✅ |
+| GraphQL Mutation 全套 | ✅ | |
+| pollTask 长轮询 | ✅ | |
+| GraphQL Subscription（Agent 收 cancel） | | ✅ |
+| 批量 reportEvents | ✅ | |
 | plugin executor | | ✅ |
 | sandbox | | ✅ |
-| 本地日志缓冲重传 | ✅ | |

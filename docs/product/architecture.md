@@ -5,13 +5,13 @@
 ```mermaid
 flowchart TB
     subgraph Triggers["触发源"]
-        API[REST API]
+        API[GraphQL API]
         WH[Webhook 调用方]
         Agent[外部 Agent 系统]
     end
 
     subgraph Platform["BuildDock 平台"]
-        Gateway[API Gateway]
+        Gateway[GraphQL Gateway]
         Auth[认证 / 授权]
         Scheduler[调度器]
         Queue[(任务队列)]
@@ -38,20 +38,21 @@ flowchart TB
     Triggers --> Gateway
     Web --> Gateway
     Mobile --> Gateway
-    CLI -->|出站 HTTPS 长轮询| Gateway
-    CLI -->|日志 / 结果上传| Gateway
+    CLI -->|GraphQL Mutation 出站| Gateway
+    CLI -->|产物 HTTP PUT| ObjectStore
     Gateway --> EventBus
-    EventBus -->|SSE / WebSocket| Web
-    EventBus -->|Push| Mobile
+    EventBus -->|GraphQL Subscription| Web
+    EventBus -->|GraphQL Subscription / Push| Mobile
 ```
 
 ## 2. 核心组件
 
-### 2.1 API Gateway
+### 2.1 GraphQL Gateway
 
-- 统一 REST API 入口
-- 认证：API Key（触发方）、Device Token（Agent）
-- 限流、审计日志
+- 统一 GraphQL 入口：`POST /graphql`（Query / Mutation）、`WS /graphql`（Subscription）
+- 认证：API Key（触发方）、Device Token（Agent）、Registration Token（注册）
+- 限流、审计日志、Persisted Queries（可选）
+- Schema 定义：[`docs/api/graphql-schema.graphql`](../api/graphql-schema.graphql)
 
 ### 2.2 调度器（Scheduler）
 
@@ -76,7 +77,7 @@ flowchart TB
 
 - 任务生命周期事件
 - 日志流转发
-- 推送到 Web（SSE/WebSocket）、Mobile（Push）、Webhook
+- 推送到 Web/Mobile（GraphQL Subscription）、Webhook（HTTP POST 出站）
 
 ### 2.6 对象存储
 
@@ -98,11 +99,11 @@ flowchart TB
 
 | 通道 | 方向 | 用途 | MVP |
 |------|------|------|-----|
-| HTTPS 长轮询 | Agent → Platform | 领取任务 | ✅ |
-| HTTPS POST | Agent → Platform | 心跳、事件、结果 | ✅ |
-| SSE / WebSocket | Platform → Web/Mobile | 实时日志与状态 | ✅ |
-| WebSocket 出站 | Agent ↔ Platform | 双向实时通道 | V2 |
-| gRPC 出站隧道 | Agent ↔ Platform | 结构化流式 | V2 |
+| GraphQL Mutation | Agent → Platform | 心跳、pollTask、事件、结果 | ✅ |
+| GraphQL Query | 触发方 / Web → Platform | 查询设备、任务 | ✅ |
+| GraphQL Subscription | Platform → Web/Mobile | 实时日志与状态 | ✅ |
+| HTTP PUT | Agent → ObjectStore | 产物上传（预签名 URL） | ✅ |
+| GraphQL Subscription | Platform → Agent | cancel 信号 | V2 |
 
 ### 3.2 Agent 工作循环
 
@@ -136,25 +137,27 @@ register → report capabilities → heartbeat loop
 ### 4.1 创建任务
 
 ```
-Client POST /v1/tasks
+Client mutation createTask
   → 校验 spec + placement
   → 写入 tasks 表（status=pending）
   → 入队（status=queued）
   → 调度器尝试 match device
   → 若匹配成功：assign lease（status=assigned）
-  → 发布 status_changed 事件
+  → Subscription 推送 taskUpdated / taskCreated
+  → 触发 webhook（若配置）
 ```
 
 ### 4.2 执行任务
 
 ```
-Agent POST /v1/devices/{id}/tasks:poll
+Agent mutation pollTask（服务端长轮询）
   → 返回 assigned 任务 + lease
-  → Agent accept（status=running）
-  → Agent 流式 POST events
-  → Agent POST complete + artifacts
+  → Agent mutation acceptTask（status=running）
+  → Agent mutation reportEvents（流式）
+  → Agent mutation renewLease
+  → Agent HTTP PUT artifacts + mutation completeTask
   → status=succeeded/failed
-  → 触发 webhook（若配置）
+  → Subscription 推送 taskEventStream / taskUpdated
 ```
 
 ### 4.3 设备离线
@@ -183,7 +186,7 @@ Agent POST /v1/devices/{id}/tasks:poll
 ┌─────────────────────────────────────┐
 │           平台（单集群）              │
 │  ┌─────────┐  ┌──────────────────┐  │
-│  │ API     │  │ PostgreSQL       │  │
+│  │ GraphQL │  │ PostgreSQL       │  │
 │  │ Server  │──│ Redis (optional) │  │
 │  └─────────┘  └──────────────────┘  │
 │  ┌─────────┐  ┌──────────────────┐  │
@@ -203,12 +206,12 @@ Agent POST /v1/devices/{id}/tasks:poll
 | 组件 | 建议 | 理由 |
 |------|------|------|
 | Agent CLI | Go | 单二进制、跨平台，Buildkite/Semaphore 验证 |
-| API Server | Go / Rust | 性能、类型安全 |
+| GraphQL Server | Go（gqlgen）/ Rust（async-graphql） | 类型安全、Subscription 支持 |
 | 数据库 | PostgreSQL | 任务状态、SKIP LOCKED 队列 |
 | 缓存/队列 | Redis Streams（可选） | 高吞吐事件 |
 | 对象存储 | S3 兼容 | 产物与日志归档 |
 | Web | React / Next.js | Dashboard |
-| 实时推送 | SSE（MVP）→ WebSocket（V2） | 简单可靠 |
+| 实时推送 | GraphQL Subscription（graphql-transport-ws） | 与 Query/Mutation 统一 Schema |
 
 ## 8. 扩展路径
 

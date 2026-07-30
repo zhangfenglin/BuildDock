@@ -448,38 +448,46 @@ return sort(candidates, strategy)[0]
 
 ### 10.1 创建
 
-```http
-POST /v1/tasks
-Authorization: Bearer api_xxx
+```graphql
+mutation CreateTask($input: CreateTaskInput!) {
+  createTask(input: $input) {
+    id
+    runtime { status }
+  }
+}
 ```
+
+Variables：
 
 ```json
 {
-  "schema_version": "1.0",
-  "spec": {
-    "type": "script",
-    "name": "validate-pr",
-    "payload": {
-      "language": "bash",
-      "source": {
-        "kind": "inline",
-        "content": "#!/usr/bin/env bash\nnpm ci\nnpm run lint\nnpm test\nnpm run build"
+  "input": {
+    "spec": {
+      "type": "SCRIPT",
+      "name": "validate-pr",
+      "payload": {
+        "language": "bash",
+        "source": {
+          "kind": "inline",
+          "content": "#!/usr/bin/env bash\nnpm ci\nnpm run lint\nnpm test\nnpm run build"
+        },
+        "cwd": "/workspace/app"
       },
-      "cwd": "/workspace/app"
+      "timeoutSec": 3600,
+      "artifactCollect": [
+        { "path": "dist/**" },
+        { "path": "test-report.xml" }
+      ],
+      "trustLevel": "TRUSTED",
+      "metadata": { "source": "custom-agent", "pr": "123" }
     },
-    "timeout_sec": 3600,
-    "artifacts": {
-      "collect": ["dist/**", "test-report.xml"]
-    },
-    "trust_level": "trusted",
-    "metadata": { "source": "custom-agent", "pr": "123" }
-  },
-  "placement": {
-    "mode": "capability_match",
-    "required_labels": { "owner": "alice" },
-    "required_handlers": ["script"],
-    "required_runtimes": [{ "name": "node", "version": ">=20" }],
-    "strategy": "least_loaded"
+    "placement": {
+      "mode": "CAPABILITY_MATCH",
+      "requiredLabels": { "owner": "alice" },
+      "requiredHandlers": ["script"],
+      "requiredRuntimes": [{ "name": "node", "version": ">=20" }],
+      "strategy": "LEAST_LOADED"
+    }
   }
 }
 ```
@@ -488,12 +496,23 @@ Authorization: Bearer api_xxx
 
 ```json
 {
-  "id": "task_01JXYZ...",
-  "runtime": { "status": "queued" },
-  "links": {
-    "self": "/v1/tasks/task_01JXYZ...",
-    "events": "/v1/tasks/task_01JXYZ.../events",
-    "logs": "/v1/tasks/task_01JXYZ.../logs"
+  "data": {
+    "createTask": {
+      "id": "task_01JXYZ...",
+      "runtime": { "status": "QUEUED" }
+    }
+  }
+}
+```
+
+实时追踪通过 GraphQL Subscription：
+
+```graphql
+subscription TaskEvents($taskId: ID!) {
+  taskEventStream(taskId: $taskId) {
+    type
+    timestamp
+    data
   }
 }
 ```

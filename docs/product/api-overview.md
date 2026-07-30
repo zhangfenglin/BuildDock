@@ -1,244 +1,442 @@
-# API 概览
+# GraphQL API 概览
 
 Schema Version: `1.0`
 
-Base URL: `https://api.builddock.example.com/v1`
+## 1. 设计决策
 
-## 1. 认证
+BuildDock **以 GraphQL 作为唯一对外 API 契约**，覆盖触发方、Web/Mobile Dashboard 与 CLI Agent。
 
-| 调用方 | 方式 | 用途 |
-|--------|------|------|
-| 触发方（API / Agent 系统） | `Authorization: Bearer api_xxx` | 创建任务、管理设备 |
-| CLI Agent | `Authorization: Bearer dtok_xxx` | 注册、心跳、执行任务 |
-| Web Dashboard | Session / OAuth | 用户登录 |
+| 决策 | 选择 | 理由 |
+|------|------|------|
+| API 风格 | GraphQL | 多端（Web/Mobile/Agent）共享 Schema；按需取字段；Subscription 原生支持实时追踪 |
+| 端点 | `POST /graphql` | Query / Mutation |
+| 实时 | `WS /graphql`（graphql-transport-ws） | Subscription：任务事件、日志、设备状态 |
+| Agent 长轮询 | `pollTask` Mutation | 服务端阻塞 resolver，Agent 无需额外 REST 端点 |
+| 产物上传 | `prepareArtifactUpload` + HTTP PUT | 大文件不走 GraphQL body；预签名 URL |
+| Schema 文件 | [`graphql-schema.graphql`](../api/graphql-schema.graphql) | 实现阶段单一契约来源 |
 
-## 2. 通用约定
+### 1.1 为何不保留 REST
 
-### 2.1 请求头
+- Web / Mobile / 外部 Agent 系统字段需求不同，GraphQL 避免 over-fetching
+- 任务详情 + events + logs + device 可一次 query 聚合
+- Subscription 替代 SSE，Dashboard 与 Mobile 共用同一套订阅
+- CLI Agent 通过 Mutation 完成全部交互，降低 Agent 实现复杂度
+
+### 1.2 混合传输（仅二进制）
+
+| 操作 | 协议 | 说明 |
+|------|------|------|
+| Query / Mutation / Subscription | GraphQL | 全部控制面交互 |
+| 产物文件上传 | HTTP PUT | 预签名 URL，不经过 GraphQL body |
+| Webhook 回调 | HTTP POST | 平台 → 调用方，出站通知 |
+
+## 2. 端点
+
+| 端点 | 方法 | 用途 |
+|------|------|------|
+| `https://api.builddock.example.com/graphql` | POST | Query、Mutation |
+| `wss://api.builddock.example.com/graphql` | WebSocket | Subscription |
+| `https://storage.builddock.example.com/...` | PUT | 产物上传（预签名） |
+
+## 3. 认证
+
+所有 GraphQL 请求携带：
 
 ```http
-Content-Type: application/json
 Authorization: Bearer <token>
-X-Request-Id: <uuid>          # 可选，链路追踪
-X-Idempotency-Key: <key>      # 创建任务时可选
+Content-Type: application/json
+X-Request-Id: <uuid>
 ```
 
-### 2.2 响应格式
+| 调用方 | Token | 可用操作 |
+|--------|-------|----------|
+| 触发方 / 外部 Agent | `api_xxx` | Query: devices, tasks；Mutation: createTask, cancelTask, approveDevice... |
+| CLI Agent | `dtok_xxx` | Mutation: heartbeat, pollTask, reportEvents, completeTask... |
+| 设备注册 | `reg_xxx` | 仅 `registerDevice` mutation |
+| Web Dashboard | Session / OAuth | 全部 Query + Subscription（按 RBAC） |
+
+### 3.1 注册例外
+
+`registerDevice` 使用 Registration Token，不需要 API Key 或 Device Token：
+
+```graphql
+mutation Register($input: RegisterDeviceInput!) {
+  registerDevice(input: $input) {
+    device { id name approvalStatus }
+    deviceToken
+    pollIntervalMs
+    heartbeatIntervalMs
+  }
+}
+```
+
+## 4. 通用约定
+
+### 4.1 请求格式
+
+```http
+POST /graphql
+Authorization: Bearer api_xxx
+Content-Type: application/json
+
+{
+  "query": "mutation CreateTask($input: CreateTaskInput!) { createTask(input: $input) { id runtime { status } } }",
+  "variables": {
+    "input": {
+      "spec": { "type": "SHELL", "name": "test", "payload": { "command": "echo hi" }, "timeoutSec": 300 },
+      "placement": { "mode": "ANY" }
+    }
+  },
+  "operationName": "CreateTask"
+}
+```
+
+### 4.2 响应格式
 
 成功：
 
 ```json
 {
-  "data": { },
-  "meta": {
-    "request_id": "req_xxx"
-  }
-}
-```
-
-错误：
-
-```json
-{
-  "error": {
-    "code": "VALIDATION_ERROR",
-    "message": "required_labels.owner is required",
-    "details": {}
-  },
-  "meta": {
-    "request_id": "req_xxx"
-  }
-}
-```
-
-### 2.3 分页
-
-```http
-GET /v1/tasks?limit=20&cursor=task_01JXYZ
-```
-
-```json
-{
-  "data": [],
-  "pagination": {
-    "next_cursor": "task_01JABC",
-    "has_more": true
-  }
-}
-```
-
-### 2.4 错误码
-
-| HTTP | code | 说明 |
-|------|------|------|
-| 400 | `VALIDATION_ERROR` | 请求参数无效 |
-| 401 | `UNAUTHORIZED` | 未认证 |
-| 403 | `FORBIDDEN` | 无权限 |
-| 404 | `NOT_FOUND` | 资源不存在 |
-| 409 | `CONFLICT` | 幂等冲突 / lease 无效 |
-| 429 | `RATE_LIMITED` | 限流 |
-| 500 | `INTERNAL_ERROR` | 服务器错误 |
-
-## 3. 资源 API
-
-### 3.1 设备（Devices）
-
-| Method | Path | 说明 | 认证 |
-|--------|------|------|------|
-| POST | `/devices/registration-tokens` | 创建注册 Token | API Key |
-| POST | `/devices/register` | 设备注册 | Registration Token |
-| GET | `/devices` | 列出设备 | API Key |
-| GET | `/devices/{id}` | 获取设备详情 | API Key |
-| PATCH | `/devices/{id}` | 更新设备（name、labels） | API Key |
-| DELETE | `/devices/{id}` | 吊销设备 | API Key |
-| POST | `/devices/{id}/approve` | 审批设备 | API Key |
-| POST | `/devices/{id}/reject` | 拒绝设备 | API Key |
-| POST | `/devices/{id}/capabilities` | 上报 Capability | Device Token |
-| POST | `/devices/{id}/heartbeat` | 心跳 | Device Token |
-| POST | `/devices/{id}/tasks:poll` | 长轮询领取任务 | Device Token |
-
-### 3.2 任务（Tasks）
-
-| Method | Path | 说明 | 认证 |
-|--------|------|------|------|
-| POST | `/tasks` | 创建任务 | API Key |
-| GET | `/tasks` | 列出任务 | API Key |
-| GET | `/tasks/{id}` | 获取任务详情 | API Key |
-| POST | `/tasks/{id}/cancel` | 取消任务 | API Key |
-| GET | `/tasks/{id}/events` | 获取事件列表 | API Key |
-| GET | `/tasks/{id}/events/stream` | SSE 事件流 | API Key |
-| GET | `/tasks/{id}/logs` | 获取日志 | API Key |
-| GET | `/tasks/{id}/logs/stream` | SSE 日志流 | API Key |
-| POST | `/tasks/{id}/accept` | Agent 接受任务 | Device Token |
-| POST | `/tasks/{id}/lease:renew` | 续租 | Device Token |
-| POST | `/tasks/{id}/events` | 上报事件 | Device Token |
-| POST | `/tasks/{id}/artifacts` | 上传产物 | Device Token |
-| POST | `/tasks/{id}/artifacts:prepare` | 获取预签名上传 URL | Device Token |
-| POST | `/tasks/{id}/complete` | 提交结果 | Device Token |
-
-### 3.3 产物（Artifacts）
-
-| Method | Path | 说明 | 认证 |
-|--------|------|------|------|
-| GET | `/artifacts/{id}` | 获取产物元数据 | API Key |
-| GET | `/artifacts/{id}/download` | 下载产物（redirect 到 signed URL） | API Key |
-
-### 3.4 设备组（V1.1）
-
-| Method | Path | 说明 | 认证 |
-|--------|------|------|------|
-| POST | `/device-groups` | 创建设备组 | API Key |
-| GET | `/device-groups` | 列出设备组 | API Key |
-| GET | `/device-groups/{id}` | 获取设备组 | API Key |
-| PATCH | `/device-groups/{id}` | 更新设备组 | API Key |
-| DELETE | `/device-groups/{id}` | 删除设备组 | API Key |
-
-### 3.5 密钥（Secrets，V1.1）
-
-| Method | Path | 说明 | 认证 |
-|--------|------|------|------|
-| POST | `/secrets` | 创建密钥 | API Key |
-| GET | `/secrets` | 列出密钥（不含值） | API Key |
-| DELETE | `/secrets/{id}` | 删除密钥 | API Key |
-
-## 4. 核心 API 详情
-
-### 4.1 创建任务
-
-```http
-POST /v1/tasks
-Authorization: Bearer api_xxx
-Content-Type: application/json
-X-Idempotency-Key: proj-abc:test:9f3a
-```
-
-Request Body：见 [Task Schema](./task-schema.md)
-
-Response `201 Created`：
-
-```json
-{
   "data": {
-    "id": "task_01JXYZ...",
-    "org_id": "org_xxx",
-    "schema_version": "1.0",
-    "spec": {},
-    "placement": {},
-    "runtime": {
-      "status": "queued",
-      "queued_at": "2026-07-30T15:00:01Z"
-    },
-    "result": null,
-    "created_at": "2026-07-30T15:00:00Z",
-    "links": {
-      "self": "/v1/tasks/task_01JXYZ...",
-      "events": "/v1/tasks/task_01JXYZ.../events/stream",
-      "logs": "/v1/tasks/task_01JXYZ.../logs/stream"
+    "createTask": {
+      "id": "task_01JXYZ...",
+      "runtime": { "status": "QUEUED" }
+    }
+  },
+  "extensions": {
+    "requestId": "req_xxx"
+  }
+}
+```
+
+错误（GraphQL errors + 业务 errors）：
+
+```json
+{
+  "data": null,
+  "errors": [
+    {
+      "message": "required_labels.owner is required",
+      "extensions": {
+        "code": "VALIDATION_ERROR",
+        "field": ["input", "placement", "requiredLabels"]
+      }
+    }
+  ],
+  "extensions": {
+    "requestId": "req_xxx"
+  }
+}
+```
+
+Mutation 业务错误也可通过 payload 返回（不抛异常）：
+
+```graphql
+type MutationPayload {
+  success: Boolean!
+  errors: [UserError!]
+}
+```
+
+### 4.3 分页（Relay Cursor Connections）
+
+```graphql
+query ListTasks {
+  tasks(status: RUNNING, first: 20, after: "task_01JABC") {
+    edges {
+      node { id runtime { status } spec }
+      cursor
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+    totalCount
+  }
+}
+```
+
+### 4.4 幂等
+
+`createTask` 支持：
+
+- Header: `X-Idempotency-Key: proj-abc:test:9f3a`
+- 或 input: `idempotencyKey` / `spec.idempotencyKey`
+
+重复请求返回同一 Task，不重复创建。
+
+### 4.5 错误码（extensions.code）
+
+| code | 说明 |
+|------|------|
+| `VALIDATION_ERROR` | 输入无效 |
+| `UNAUTHORIZED` | 未认证 |
+| `FORBIDDEN` | 无权限 |
+| `NOT_FOUND` | 资源不存在 |
+| `CONFLICT` | 幂等冲突 / lease 无效 |
+| `RATE_LIMITED` | 限流 |
+| `INTERNAL_ERROR` | 服务器错误 |
+
+## 5. Query
+
+| Query | 认证 | 说明 |
+|-------|------|------|
+| `viewer` | 任意 | 当前认证主体 |
+| `device(id)` | API Key | 设备详情（含 capability） |
+| `devices(...)` | API Key | 设备列表 |
+| `task(id)` | API Key | 任务详情（含 runtime、result） |
+| `tasks(...)` | API Key | 任务列表 |
+| `artifact(id)` | API Key | 产物元数据 |
+
+### 5.1 任务详情（聚合查询）
+
+```graphql
+query GetTask($id: ID!) {
+  task(id: $id) {
+    id
+    spec
+    placement
+    runtime {
+      status
+      assignedDevice { id name status }
+      progress { percent message }
+      lease { leaseId expiresAt }
+    }
+    result {
+      status
+      exitCode
+      durationMs
+      output { structured }
+      artifacts { id name url sizeBytes }
+    }
+    events(first: 50, types: [LOG, PROGRESS]) {
+      edges {
+        node { timestamp type data }
+      }
+    }
+    logs(stream: STDOUT, first: 100) {
+      edges {
+        node { timestamp line }
+      }
     }
   }
 }
 ```
 
-### 4.2 列出任务
+## 6. Mutation
 
-```http
-GET /v1/tasks?status=running&device_id=dev_01JABC&limit=20
-```
+### 6.1 平台 / 触发方（API Key）
 
-Query 参数：
+| Mutation | 说明 |
+|----------|------|
+| `createRegistrationToken` | 创建设备注册 Token |
+| `createTask` | 创建任务 |
+| `cancelTask` | 取消任务 |
+| `updateDevice` | 更新设备 name / labels |
+| `approveDevice` | 审批设备 |
+| `rejectDevice` | 拒绝设备 |
+| `revokeDevice` | 吊销设备 |
 
-| 参数 | 说明 |
-|------|------|
-| `status` | 过滤状态 |
-| `device_id` | 过滤设备 |
-| `created_after` | ISO 8601 |
-| `created_before` | ISO 8601 |
-| `metadata.source` | 元数据过滤 |
-| `limit` | 默认 20，最大 100 |
-| `cursor` | 分页游标 |
+### 6.2 设备注册
 
-### 4.3 SSE 事件流
+| Mutation | 认证 | 说明 |
+|----------|------|------|
+| `registerDevice` | Registration Token | 设备首次注册 |
 
-```http
-GET /v1/tasks/{id}/events/stream
-Authorization: Bearer api_xxx
-Accept: text/event-stream
-```
+### 6.3 CLI Agent（Device Token）
 
-```
-event: status_changed
-data: {"status":"running","timestamp":"2026-07-30T15:00:05Z"}
+| Mutation | 说明 |
+|----------|------|
+| `reportCapabilities` | 上报完整 Capability |
+| `heartbeat` | 心跳 |
+| `pollTask` | 长轮询领取任务 |
+| `acceptTask` | 接受任务 |
+| `renewLease` | 续租 |
+| `reportEvents` | 上报事件（单条/批量） |
+| `prepareArtifactUpload` | 获取预签名上传 URL |
+| `confirmArtifactUpload` | 确认上传完成 |
+| `completeTask` | 提交结果 |
 
-event: log
-data: {"stream":"stdout","line":"Running tests..."}
+## 7. 核心 Mutation 示例
 
-event: log
-data: {"stream":"stdout","line":"PASS utils.test.ts"}
+### 7.1 创建任务
 
-event: status_changed
-data: {"status":"succeeded","timestamp":"2026-07-30T15:04:32Z"}
-```
-
-### 4.4 取消任务
-
-```http
-POST /v1/tasks/{id}/cancel
-Authorization: Bearer api_xxx
-```
-
-```json
-{
-  "reason": "User requested cancellation"
+```graphql
+mutation CreateTask($input: CreateTaskInput!) {
+  createTask(input: $input) {
+    id
+    runtime { status queuedAt }
+    createdAt
+  }
 }
 ```
 
-仅 `queued`、`assigned`、`running` 可取消。
+Variables：
 
-## 5. Webhook 回调
+```json
+{
+  "input": {
+    "spec": {
+      "type": "SCRIPT",
+      "name": "validate-pr",
+      "payload": {
+        "language": "bash",
+        "source": {
+          "kind": "inline",
+          "content": "#!/usr/bin/env bash\nnpm ci && npm test"
+        },
+        "cwd": "/workspace/app"
+      },
+      "timeoutSec": 3600,
+      "trustLevel": "TRUSTED",
+      "metadata": { "source": "custom-agent", "pr": "123" }
+    },
+    "placement": {
+      "mode": "CAPABILITY_MATCH",
+      "requiredLabels": { "owner": "alice" },
+      "requiredHandlers": ["script"],
+      "requiredRuntimes": [{ "name": "node", "version": ">=20" }],
+      "strategy": "LEAST_LOADED"
+    },
+    "idempotencyKey": "proj-abc:pr-123"
+  }
+}
+```
 
-任务创建时可在 `spec.callbacks.webhook` 指定 URL。
+### 7.2 Agent 长轮询
 
-### 5.1 请求格式
+```graphql
+mutation PollTask($input: PollTaskInput!) {
+  pollTask(input: $input) {
+    task {
+      id
+      lease { leaseId expiresAt }
+      spec
+      resolvedSecrets
+    }
+  }
+}
+```
+
+Variables：
+
+```json
+{
+  "input": {
+    "deviceId": "dev_01JABC...",
+    "generation": 43,
+    "availableSlots": 1,
+    "supportedTypes": ["SHELL", "SCRIPT"],
+    "timeoutMs": 30000
+  }
+}
+```
+
+- 有任务：返回 `task` 对象
+- 无任务：`task` 为 `null`（Agent 立即重试或等待 `pollIntervalMs`）
+
+### 7.3 Agent 提交结果
+
+```graphql
+mutation CompleteTask($input: CompleteTaskInput!) {
+  completeTask(input: $input) {
+    success
+    errors { code message }
+  }
+}
+```
+
+### 7.4 取消任务
+
+```graphql
+mutation CancelTask($taskId: ID!) {
+  cancelTask(input: { taskId: $taskId, reason: "User cancelled" }) {
+    id
+    runtime { status cancelRequested }
+  }
+}
+```
+
+## 8. Subscription
+
+Web / Mobile 通过 WebSocket 订阅，`connection_init` 携带 Bearer Token。
+
+### 8.1 任务事件流
+
+```graphql
+subscription TaskEvents($taskId: ID!) {
+  taskEventStream(taskId: $taskId, types: [LOG, PROGRESS, STATUS_CHANGED]) {
+    id
+    timestamp
+    type
+    data
+  }
+}
+```
+
+### 8.2 任务状态变更
+
+```graphql
+subscription TaskUpdated($taskId: ID!) {
+  taskUpdated(taskId: $taskId) {
+    id
+    runtime { status progress { percent message } }
+    result { status exitCode }
+  }
+}
+```
+
+### 8.3 设备状态
+
+```graphql
+subscription DeviceOnline($deviceId: ID) {
+  deviceStatusChanged(deviceId: $deviceId) {
+    id
+    status
+    agent { lastSeenAt }
+    capability { load { availableSlots activeTasks } }
+  }
+}
+```
+
+### 8.4 Dashboard 新任务
+
+```graphql
+subscription NewTasks($orgId: ID!) {
+  taskCreated(orgId: $orgId) {
+    id
+    spec
+    runtime { status }
+    createdAt
+  }
+}
+```
+
+## 9. 产物上传流程
+
+GraphQL 不传输文件二进制，走预签名 URL：
+
+```
+1. Agent: prepareArtifactUpload mutation → uploadUrl + artifactId
+2. Agent: HTTP PUT 文件到 uploadUrl
+3. Agent: confirmArtifactUpload mutation
+4. Agent: completeTask 时引用 artifactIds
+```
+
+```graphql
+mutation PrepareUpload($input: PrepareArtifactUploadInput!) {
+  prepareArtifactUpload(input: $input) {
+    artifactId
+    uploadUrl
+  }
+}
+```
+
+## 10. Webhook 回调
+
+Webhook 仍为出站 HTTP POST（非 GraphQL），格式不变。见 [§11](#11-webhook-回调)。
+
+## 11. Webhook 回调
 
 ```http
 POST https://example.com/hooks/builddock
@@ -253,13 +451,11 @@ X-BuildDock-Event: task.completed
   "timestamp": "2026-07-30T15:04:32Z",
   "task": {
     "id": "task_01JXYZ...",
-    "runtime": { "status": "succeeded" },
+    "runtime": { "status": "SUCCEEDED" },
     "result": {}
   }
 }
 ```
-
-### 5.2 事件类型
 
 | event | 触发时机 |
 |-------|----------|
@@ -271,44 +467,43 @@ X-BuildDock-Event: task.completed
 | `task.cancelled` | 取消 |
 | `task.timed_out` | 超时 |
 
-### 5.3 签名验证
+签名：`HMAC-SHA256(webhook_secret, request_body)`
 
-```
-signature = HMAC-SHA256(webhook_secret, request_body)
-```
+## 12. 速率限制
 
-## 6. 速率限制
-
-| 端点 | 限制 |
+| 操作 | 限制 |
 |------|------|
-| POST /tasks | 100 req/min per API Key |
-| GET /tasks/* | 300 req/min |
-| Agent poll | 无硬限（长轮询） |
-| Agent events | 1000 events/min per device |
+| `createTask` | 100/min per API Key |
+| Query `tasks` / `devices` | 300/min |
+| `pollTask` | 无硬限（长轮询） |
+| `reportEvents` | 1000 events/min per device |
+| Subscription 连接 | 10 concurrent per subject |
 
-超限返回 `429` + `Retry-After` 头。
+超限：`errors[].extensions.code = RATE_LIMITED`，HTTP 429。
 
-## 7. OpenAPI
+## 13. 客户端 SDK 建议
 
-完整 OpenAPI 3.1 规范将在实现阶段生成于：
+| 客户端 | 推荐 |
+|--------|------|
+| Web Dashboard | Apollo Client / urql + graphql-ws |
+| Mobile | Apollo iOS/Android / gql |
+| CLI Agent (Go) | shurcooL/graphql + gorilla/websocket（Subscription 可选） |
+| 外部触发方 | 任意 GraphQL HTTP 客户端 |
 
-```
-docs/api/openapi.yaml
-```
+Agent MVP 仅需 HTTP POST `/graphql`（Mutation），无需 WebSocket。
 
-MVP 先以本文档 + [Task Schema](./task-schema.md) + [Agent 协议](./agent-protocol.md) 为契约来源。
+## 14. MVP 裁剪
 
-## 8. MVP API 裁剪
+| 能力 | MVP | V1.1 | V2 |
+|------|-----|------|-----|
+| Query: devices, tasks | ✅ | | |
+| Mutation: 平台 + Agent 全套 | ✅ | | |
+| Subscription: taskEventStream | ✅ | | |
+| Subscription: taskUpdated | ✅ | | |
+| Subscription: deviceStatusChanged | | ✅ | |
+| Subscription: taskCreated | | ✅ | |
+| GraphQL Schema 文件 | ✅ | | |
+| 设备组 / Secrets Mutation | | ✅ | |
+| Agent GraphQL Subscription | | | ✅ |
 
-| API | MVP | V1.1 | V2 |
-|-----|-----|------|-----|
-| Devices CRUD | ✅ | | |
-| Device approve/reject | ✅ | | |
-| Tasks CRUD | ✅ | | |
-| Task cancel | ✅ | | |
-| SSE events/logs | ✅ | | |
-| Artifacts | ✅ | | |
-| Device groups | | ✅ | |
-| Secrets | | ✅ | |
-| Webhook | ✅ | | |
-| OpenAPI spec | | ✅ | |
+完整 Schema 定义：[`docs/api/graphql-schema.graphql`](../api/graphql-schema.graphql)

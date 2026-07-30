@@ -23,7 +23,8 @@
 | [Device Capability](./docs/product/device-capability.md) | 设备注册与能力模型 |
 | [Task Schema](./docs/product/task-schema.md) | 通用任务结构与类型 |
 | [Agent 协议](./docs/product/agent-protocol.md) | CLI Agent 交互协议 |
-| [API 概览](./docs/product/api-overview.md) | REST API 设计 |
+| [GraphQL API 概览](./docs/product/api-overview.md) | GraphQL Query / Mutation / Subscription |
+| [GraphQL Schema](./docs/api/graphql-schema.graphql) | 完整 Schema 定义 |
 | [竞品分析](./docs/research/competitive-analysis.md) | 竞品调研 |
 
 ## 状态

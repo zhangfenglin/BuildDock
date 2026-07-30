@@ -13,7 +13,8 @@ BuildDock 是一个**用户设备注册 + 远程任务调度 + CLI Agent 执行 
 | [Device Capability 模型](./product/device-capability.md) | 设备注册、能力上报、心跳、标签 |
 | [Task Schema](./product/task-schema.md) | 通用任务结构、类型、状态机、结果 |
 | [Agent 协议](./product/agent-protocol.md) | CLI Agent 与平台的交互协议 |
-| [API 概览](./product/api-overview.md) | REST API 路径与资源设计 |
+| [GraphQL API 概览](./product/api-overview.md) | GraphQL Query / Mutation / Subscription |
+| [GraphQL Schema](../api/graphql-schema.graphql) | 完整 Schema 定义文件 |
 
 ### 调研
 
