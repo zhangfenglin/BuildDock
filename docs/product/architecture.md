@@ -201,21 +201,23 @@ Agent mutation pollTask（服务端长轮询）
     └───────────┘   └──────────┘
 ```
 
-## 7. 技术选型建议
+## 7. 技术选型（确定）
 
-| 组件 | 建议 | 理由 |
+| 组件 | 技术 | 说明 |
 |------|------|------|
-| Agent CLI | Go | 单二进制、跨平台，Buildkite/Semaphore 验证 |
-| GraphQL Server | Go（gqlgen）/ Rust（async-graphql） | 类型安全、Subscription 支持 |
-| 数据库 | PostgreSQL | 任务状态、SKIP LOCKED 队列 |
-| 缓存/队列 | Redis Streams（可选） | 高吞吐事件 |
-| 对象存储 | S3 兼容 | 产物与日志归档 |
-| Web | React / Next.js | Dashboard |
-| 实时推送 | GraphQL Subscription（graphql-transport-ws） | 与 Query/Mutation 统一 Schema |
+| 后端 | **Go 1.22+** + gqlgen + sqlc/pgx | 详见 [后端架构](../architecture/backend.md) |
+| CLI | **Go 1.22+** + cobra | 详见 [CLI 架构](../architecture/cli.md) |
+| 前端 | **Vite 6 + TypeScript + React 19** | 详见 [前端架构](../architecture/frontend.md) |
+| 数据库 | PostgreSQL 16 | 主存储 + 任务队列 |
+| 缓存/事件 | Redis 7 | Subscription fan-out |
+| 对象存储 | MinIO / S3 | 产物 |
+| API | GraphQL | [`graphql-schema.graphql`](../api/graphql-schema.graphql) |
+
+完整项目结构、部署与端到端集成见 [架构设计文档](../architecture/README.md)。
 
 ## 8. 扩展路径
 
 1. **MVP**：单租户、shell/script、Web + CLI
-2. **V1.1**：设备组、多种 placement strategy、MCP
+2. **V1.1**：设备组、多种 placement strategy、MCP、OAuth
 3. **V2**：Mobile、plugin task、composite workflow
 4. **Enterprise**：多租户 RBAC、SSO、审计导出、私有部署

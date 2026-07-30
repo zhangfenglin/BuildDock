@@ -25,6 +25,8 @@
 | [Agent 协议](./docs/product/agent-protocol.md) | CLI Agent 交互协议 |
 | [GraphQL API 概览](./docs/product/api-overview.md) | GraphQL Query / Mutation / Subscription |
 | [GraphQL Schema](./docs/api/graphql-schema.graphql) | 完整 Schema 定义 |
+| [架构设计](./docs/architecture/README.md) | Go 后端/CLI + Vite 前端方案 |
+| [端到端集成](./docs/architecture/integration.md) | 三端协作与联调 |
 | [竞品分析](./docs/research/competitive-analysis.md) | 竞品调研 |
 
 ## 状态

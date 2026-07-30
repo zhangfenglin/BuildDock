@@ -16,6 +16,18 @@ BuildDock 是一个**用户设备注册 + 远程任务调度 + CLI Agent 执行 
 | [GraphQL API 概览](./product/api-overview.md) | GraphQL Query / Mutation / Subscription |
 | [GraphQL Schema](../api/graphql-schema.graphql) | 完整 Schema 定义文件 |
 
+### 架构设计
+
+| 文档 | 说明 |
+|------|------|
+| [架构设计索引](./architecture/README.md) | 技术栈、文档导航 |
+| [Monorepo 结构](./architecture/monorepo.md) | 仓库目录与模块划分 |
+| [后端架构（Go）](./architecture/backend.md) | gqlgen、分层、调度器 |
+| [CLI 架构（Go）](./architecture/cli.md) | builddock-agent 设计 |
+| [前端架构（Vite + TS）](./architecture/frontend.md) | Dashboard、urql |
+| [基础设施与部署](./architecture/infrastructure.md) | Docker、CI/CD |
+| [端到端集成](./architecture/integration.md) | 三端协作链路 |
+
 ### 调研
 
 | 文档 | 说明 |
