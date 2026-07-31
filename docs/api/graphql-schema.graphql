@@ -1,0 +1,700 @@
+# BuildDock GraphQL Schema
+# Schema Version: 1.0
+# 实现阶段以此文件为契约来源
+
+"""
+ISO 8601 DateTime
+"""
+scalar DateTime
+
+"""
+任意 JSON 对象
+"""
+scalar JSON
+
+"""
+分页游标
+"""
+scalar Cursor
+
+# ─────────────────────────────────────────────
+# Enums
+# ─────────────────────────────────────────────
+
+enum DeviceStatus {
+  PENDING
+  ONLINE
+  OFFLINE
+  DRAINING
+  REVOKED
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum TaskStatus {
+  PENDING
+  QUEUED
+  ASSIGNING
+  ASSIGNED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  TIMED_OUT
+  EXPIRED
+}
+
+enum TaskType {
+  SHELL
+  SCRIPT
+  HTTP
+  DOCKER
+  PLUGIN
+  AGENT_MESSAGE
+  COMPOSITE
+}
+
+enum TrustLevel {
+  TRUSTED
+  UNTRUSTED
+  SYSTEM
+}
+
+enum PlacementMode {
+  ANY
+  DEVICE_ID
+  DEVICE_IDS
+  GROUP
+  CAPABILITY_MATCH
+}
+
+enum PlacementStrategy {
+  FIFO
+  LEAST_LOADED
+  CAPABILITY_SCORE
+  ROUND_ROBIN
+  STICKY
+}
+
+enum TaskEventType {
+  STATUS_CHANGED
+  LOG
+  PROGRESS
+  ARTIFACT
+  METRIC
+  TOOL_CALL
+  HEARTBEAT
+}
+
+enum LogStream {
+  STDOUT
+  STDERR
+}
+
+# ─────────────────────────────────────────────
+# Common
+# ─────────────────────────────────────────────
+
+type PageInfo {
+  hasNextPage: Boolean!
+  endCursor: Cursor
+}
+
+interface Node {
+  id: ID!
+}
+
+type MutationPayload {
+  success: Boolean!
+  errors: [UserError!]
+}
+
+type UserError {
+  code: String!
+  message: String!
+  field: [String!]
+}
+
+# ─────────────────────────────────────────────
+# Device
+# ─────────────────────────────────────────────
+
+type DeviceFingerprint {
+  machineId: String!
+  hostname: String!
+  platform: String!
+  arch: String!
+}
+
+type DeviceAgentInfo {
+  version: String!
+  cli: String!
+  connectedAt: DateTime
+  lastSeenAt: DateTime
+}
+
+type HandlerCapability {
+  type: String!
+  version: String!
+  enabled: Boolean!
+  languages: [String!]
+  plugins: [String!]
+}
+
+type RuntimeCapability {
+  name: String!
+  version: String!
+}
+
+type DeviceLoad {
+  cpuUsage: Float!
+  memoryUsage: Float!
+  activeTasks: Int!
+  availableSlots: Int!
+}
+
+type DeviceCapabilityReport {
+  schemaVersion: String!
+  reportedAt: DateTime!
+  generation: Int!
+  system: JSON
+  resources: JSON
+  load: DeviceLoad
+  network: JSON
+  runtimes: [RuntimeCapability!]
+  handlers: [HandlerCapability!]
+  labels: JSON
+  constraints: JSON
+}
+
+type Device implements Node {
+  id: ID!
+  orgId: ID!
+  name: String!
+  status: DeviceStatus!
+  approvalStatus: ApprovalStatus!
+  fingerprint: DeviceFingerprint!
+  agent: DeviceAgentInfo
+  labels: JSON
+  capability: DeviceCapabilityReport
+  createdAt: DateTime!
+  updatedAt: DateTime!
+  tasks(status: TaskStatus, first: Int = 20, after: Cursor): TaskConnection!
+}
+
+type DeviceEdge {
+  node: Device!
+  cursor: Cursor!
+}
+
+type DeviceConnection {
+  edges: [DeviceEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int
+}
+
+type DeviceRegistrationPayload {
+  device: Device!
+  deviceToken: String!
+  pollIntervalMs: Int!
+  heartbeatIntervalMs: Int!
+}
+
+type HeartbeatPayload {
+  pollIntervalMs: Int!
+  heartbeatIntervalMs: Int!
+}
+
+# ─────────────────────────────────────────────
+# Task
+# ─────────────────────────────────────────────
+
+input TaskSpecInput {
+  type: TaskType!
+  name: String!
+  description: String
+  payload: JSON!
+  timeoutSec: Int!
+  retry: RetryInput
+  idempotencyKey: String
+  env: JSON
+  secretRefs: [SecretRefInput!]
+  workingDir: String
+  artifactCollect: [ArtifactCollectInput!]
+  callbacks: CallbackInput
+  trustLevel: TrustLevel = TRUSTED
+  metadata: JSON
+}
+
+input RetryInput {
+  maxAttempts: Int!
+  backoffSec: Int!
+}
+
+input SecretRefInput {
+  ref: String!
+  env: String!
+}
+
+input ArtifactCollectInput {
+  path: String!
+  name: String
+}
+
+input CallbackInput {
+  webhook: String
+  events: [String!]
+}
+
+input PlacementInput {
+  mode: PlacementMode = CAPABILITY_MATCH
+  deviceId: ID
+  deviceIds: [ID!]
+  group: ID
+  requiredLabels: JSON
+  preferredLabels: JSON
+  requiredHandlers: [String!]
+  requiredRuntimes: [RuntimeRequirementInput!]
+  resourceRequirements: JSON
+  networkRequirements: JSON
+  strategy: PlacementStrategy = LEAST_LOADED
+  scheduleAt: DateTime
+  deadlineAt: DateTime
+}
+
+input RuntimeRequirementInput {
+  name: String!
+  version: String!
+}
+
+type TaskLease {
+  leaseId: ID!
+  generation: Int!
+  expiresAt: DateTime!
+}
+
+type TaskProgress {
+  percent: Int
+  message: String
+}
+
+type TaskRuntime {
+  status: TaskStatus!
+  attempt: Int!
+  assignedDevice: Device
+  lease: TaskLease
+  queuedAt: DateTime
+  assignedAt: DateTime
+  startedAt: DateTime
+  finishedAt: DateTime
+  progress: TaskProgress
+  cancelRequested: Boolean!
+  failureReason: String
+}
+
+type TaskOutput {
+  stdoutRef: String
+  stderrRef: String
+  structured: JSON
+}
+
+type TaskError {
+  code: String!
+  message: String!
+  details: JSON
+}
+
+type Artifact {
+  id: ID!
+  name: String!
+  url: String!
+  sizeBytes: Int!
+  contentType: String!
+  createdAt: DateTime!
+}
+
+type TaskResult {
+  status: TaskStatus!
+  exitCode: Int
+  startedAt: DateTime
+  finishedAt: DateTime
+  durationMs: Int
+  output: TaskOutput
+  artifacts: [Artifact!]
+  eventsRef: String
+  error: TaskError
+}
+
+type Task implements Node {
+  id: ID!
+  orgId: ID!
+  schemaVersion: String!
+  spec: JSON!
+  placement: JSON!
+  runtime: TaskRuntime!
+  result: TaskResult
+  createdBy: JSON
+  createdAt: DateTime!
+  updatedAt: DateTime!
+  events(first: Int = 50, after: Cursor, types: [TaskEventType!]): TaskEventConnection!
+  logs(stream: LogStream, first: Int = 100, after: Cursor): TaskLogConnection!
+}
+
+type TaskEdge {
+  node: Task!
+  cursor: Cursor!
+}
+
+type TaskConnection {
+  edges: [TaskEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int
+}
+
+type TaskEvent implements Node {
+  id: ID!
+  taskId: ID!
+  deviceId: ID
+  timestamp: DateTime!
+  type: TaskEventType!
+  data: JSON!
+}
+
+type TaskEventEdge {
+  node: TaskEvent!
+  cursor: Cursor!
+}
+
+type TaskEventConnection {
+  edges: [TaskEventEdge!]!
+  pageInfo: PageInfo!
+}
+
+type TaskLogLine {
+  timestamp: DateTime!
+  stream: LogStream!
+  line: String!
+}
+
+type TaskLogEdge {
+  node: TaskLogLine!
+  cursor: Cursor!
+}
+
+type TaskLogConnection {
+  edges: [TaskLogEdge!]!
+  pageInfo: PageInfo!
+}
+
+type PollTaskPayload {
+  task: AssignedTask
+}
+
+type AssignedTask {
+  id: ID!
+  lease: TaskLease!
+  spec: JSON!
+  resolvedSecrets: JSON
+}
+
+type RenewLeasePayload {
+  lease: TaskLease!
+}
+
+type PrepareArtifactUploadPayload {
+  artifactId: ID!
+  uploadUrl: String!
+}
+
+# ─────────────────────────────────────────────
+# Registration Token
+# ─────────────────────────────────────────────
+
+type RegistrationToken {
+  token: String!
+  expiresAt: DateTime!
+}
+
+# ─────────────────────────────────────────────
+# Queries
+# ─────────────────────────────────────────────
+
+type Query {
+  """当前认证主体信息"""
+  viewer: Viewer!
+
+  """按 ID 获取设备"""
+  device(id: ID!): Device
+
+  """设备列表"""
+  devices(
+    status: DeviceStatus
+    approvalStatus: ApprovalStatus
+    labels: JSON
+    first: Int = 20
+    after: Cursor
+  ): DeviceConnection!
+
+  """按 ID 获取任务"""
+  task(id: ID!): Task
+
+  """任务列表"""
+  tasks(
+    status: TaskStatus
+    deviceId: ID
+    createdAfter: DateTime
+    createdBefore: DateTime
+    metadata: JSON
+    first: Int = 20
+    after: Cursor
+  ): TaskConnection!
+
+  """获取产物元数据"""
+  artifact(id: ID!): Artifact
+}
+
+type Viewer {
+  orgId: ID!
+  subjectType: String!
+  subjectId: String!
+}
+
+# ─────────────────────────────────────────────
+# Mutations — 平台 / 触发方
+# ─────────────────────────────────────────────
+
+type Mutation {
+  """创建注册 Token（API Key）"""
+  createRegistrationToken(input: CreateRegistrationTokenInput!): RegistrationToken!
+
+  """设备注册（Registration Token，无需 API Key）"""
+  registerDevice(input: RegisterDeviceInput!): DeviceRegistrationPayload!
+
+  """创建任务（API Key）"""
+  createTask(input: CreateTaskInput!): Task!
+
+  """取消任务（API Key）"""
+  cancelTask(input: CancelTaskInput!): Task!
+
+  """更新设备（API Key）"""
+  updateDevice(input: UpdateDeviceInput!): Device!
+
+  """审批设备（API Key）"""
+  approveDevice(id: ID!): Device!
+
+  """拒绝设备（API Key）"""
+  rejectDevice(id: ID!): Device!
+
+  """吊销设备（API Key）"""
+  revokeDevice(id: ID!): Device!
+
+  # ── Agent Mutations（Device Token）──
+
+  """上报完整 Capability（Device Token）"""
+  reportCapabilities(input: ReportCapabilitiesInput!): MutationPayload!
+
+  """心跳（Device Token）"""
+  heartbeat(input: HeartbeatInput!): HeartbeatPayload!
+
+  """
+  长轮询领取任务（Device Token）
+  服务端阻塞直到有任务或 timeoutMs 到期
+  """
+  pollTask(input: PollTaskInput!): PollTaskPayload!
+
+  """接受任务（Device Token）"""
+  acceptTask(input: AcceptTaskInput!): MutationPayload!
+
+  """续租（Device Token）"""
+  renewLease(input: RenewLeaseInput!): RenewLeasePayload!
+
+  """上报事件，支持单条或批量（Device Token）"""
+  reportEvents(input: ReportEventsInput!): MutationPayload!
+
+  """获取产物预签名上传 URL（Device Token）"""
+  prepareArtifactUpload(input: PrepareArtifactUploadInput!): PrepareArtifactUploadPayload!
+
+  """确认产物上传完成（Device Token）"""
+  confirmArtifactUpload(input: ConfirmArtifactUploadInput!): Artifact!
+
+  """提交任务结果（Device Token）"""
+  completeTask(input: CompleteTaskInput!): MutationPayload!
+}
+
+# ─────────────────────────────────────────────
+# Mutations — Inputs
+# ─────────────────────────────────────────────
+
+input CreateRegistrationTokenInput {
+  orgId: ID!
+  expiresInSec: Int = 3600
+  labels: JSON
+}
+
+input RegisterDeviceInput {
+  registrationToken: String!
+  fingerprint: DeviceFingerprintInput!
+  name: String!
+  labels: JSON
+  capabilities: ReportCapabilitiesInput
+}
+
+input DeviceFingerprintInput {
+  machineId: String!
+  hostname: String!
+  platform: String!
+  arch: String!
+}
+
+input CreateTaskInput {
+  spec: TaskSpecInput!
+  placement: PlacementInput!
+  idempotencyKey: String
+}
+
+input CancelTaskInput {
+  taskId: ID!
+  reason: String
+}
+
+input UpdateDeviceInput {
+  id: ID!
+  name: String
+  labels: JSON
+}
+
+input ReportCapabilitiesInput {
+  deviceId: ID!
+  schemaVersion: String = "1.0"
+  generation: Int!
+  system: JSON
+  resources: JSON
+  load: DeviceLoadInput
+  network: JSON
+  runtimes: [RuntimeCapabilityInput!]
+  handlers: [HandlerCapabilityInput!]
+  labels: JSON
+  constraints: JSON
+}
+
+input DeviceLoadInput {
+  cpuUsage: Float!
+  memoryUsage: Float!
+  activeTasks: Int!
+  availableSlots: Int!
+}
+
+input RuntimeCapabilityInput {
+  name: String!
+  version: String!
+}
+
+input HandlerCapabilityInput {
+  type: String!
+  version: String!
+  enabled: Boolean!
+  languages: [String!]
+  plugins: [String!]
+}
+
+input HeartbeatInput {
+  deviceId: ID!
+  generation: Int!
+  status: DeviceStatus = ONLINE
+  load: DeviceLoadInput!
+  runningTaskIds: [ID!]
+}
+
+input PollTaskInput {
+  deviceId: ID!
+  generation: Int!
+  availableSlots: Int!
+  supportedTypes: [TaskType!]!
+  timeoutMs: Int = 30000
+}
+
+input AcceptTaskInput {
+  taskId: ID!
+  leaseId: ID!
+  generation: Int!
+}
+
+input RenewLeaseInput {
+  taskId: ID!
+  leaseId: ID!
+  generation: Int!
+}
+
+input TaskEventInput {
+  type: TaskEventType!
+  data: JSON!
+  timestamp: DateTime
+}
+
+input ReportEventsInput {
+  taskId: ID!
+  events: [TaskEventInput!]!
+}
+
+input PrepareArtifactUploadInput {
+  taskId: ID!
+  name: String!
+  sizeBytes: Int!
+  contentType: String!
+}
+
+input ConfirmArtifactUploadInput {
+  taskId: ID!
+  artifactId: ID!
+}
+
+input TaskResultInput {
+  status: TaskStatus!
+  exitCode: Int
+  startedAt: DateTime!
+  finishedAt: DateTime!
+  durationMs: Int!
+  output: TaskOutputInput
+  artifactIds: [ID!]
+  error: TaskErrorInput
+}
+
+input TaskOutputInput {
+  stdoutRef: String
+  stderrRef: String
+  structured: JSON
+}
+
+input TaskErrorInput {
+  code: String!
+  message: String!
+  details: JSON
+}
+
+input CompleteTaskInput {
+  taskId: ID!
+  leaseId: ID!
+  result: TaskResultInput!
+}
+
+# ─────────────────────────────────────────────
+# Subscriptions — Web / Mobile / Agent
+# ─────────────────────────────────────────────
+
+type Subscription {
+  """任务状态与 runtime 变更"""
+  taskUpdated(taskId: ID!): Task!
+
+  """任务事件流（含 log、progress）"""
+  taskEventStream(taskId: ID!, types: [TaskEventType!]): TaskEvent!
+
+  """设备在线状态变更"""
+  deviceStatusChanged(deviceId: ID): Device!
+
+  """组织内新任务创建（Dashboard 用）"""
+  taskCreated(orgId: ID!): Task!
+}
