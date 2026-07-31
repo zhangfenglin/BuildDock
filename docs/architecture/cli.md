@@ -15,12 +15,16 @@
 
 ## 2. 进程架构
 
+用户侧 CLI 顶层命令：`login`、`start` / `stop` / `restart`、`status`。详见 [CLI 命令设计](./cli-commands.md)。
+
 ```mermaid
 flowchart TB
-    subgraph AgentProcess["builddock-agent"]
+    subgraph AgentProcess["builddock"]
         Main[main / cobra]
-        Main --> Register[register 命令]
+        Main --> Login[login 命令]
         Main --> Start[start 命令]
+        Main --> Stop[stop 命令]
+        Main --> StatusCmd[status 命令]
 
         Start --> Runtime[Agent Runtime]
         Runtime --> HB[Heartbeat Loop]
@@ -50,10 +54,12 @@ cli/
 ├── internal/
 │   ├── cmd/
 │   │   ├── root.go
-│   │   ├── register.go
+│   │   ├── login.go
 │   │   ├── start.go
+│   │   ├── stop.go
+│   │   ├── restart.go
 │   │   ├── status.go
-│   │   └── stop.go
+│   │   └── version.go
 │   ├── config/
 │   │   └── config.go               # 读写 ~/.builddock/config.yaml
 │   ├── client/
@@ -86,31 +92,37 @@ cli/
 
 | 命令 | 说明 |
 |------|------|
-| `builddock-agent register` | 首次注册设备 |
-| `builddock-agent start` | 启动守护进程（前台或 `--daemon`） |
-| `builddock-agent status` | 打印本地配置与连接状态 |
-| `builddock-agent stop` | 停止本地 daemon（写 PID 文件） |
-| `builddock-agent version` | 版本信息 |
+| `builddock login` | 注册设备并写入本地凭据（原 `register`） |
+| `builddock start` | 启动 Agent 运行时（前台或 `--daemon`） |
+| `builddock stop` | 停止本地 Agent |
+| `builddock restart` | 重启 Agent |
+| `builddock status` | 登录态、运行态、连通性 |
+| `builddock version` | 版本信息 |
 
-### 4.1 register 流程
+完整参数、退出码、输出格式见 **[CLI 命令设计](./cli-commands.md)**。
+
+### 4.1 login 流程
 
 ```
-1. 读取 --token / --name / --labels
+1. 读取 --token / --server / --name / --label
 2. fingerprint.Collect() → machineId, platform, arch, hostname
 3. capability.Probe() → handlers, runtimes
-4. client.RegisterDevice(input)
+4. client.RegisterDevice(input)   # GraphQL registerDevice
 5. 写入 config.yaml（device_id, device_token, graphql_url）
 6. 提示：等待管理员 approve（若 approvalStatus=PENDING）
+7. 提示下一步：builddock start --daemon
 ```
 
 ### 4.2 start 流程
 
 ```
-1. 加载 config.yaml
-2. capability.ReportFull() → reportCapabilities
-3. 启动 heartbeat goroutine（每 heartbeatIntervalMs）
-4. 启动 poll loop（主 goroutine 或 worker pool）
-5. 监听 SIGINT/SIGTERM → 优雅退出（等待 running 任务完成或超时）
+1. 校验已 login（config.yaml 含 device_token）
+2. 加载 config.yaml
+3. capability.ReportFull() → reportCapabilities
+4. 启动 heartbeat goroutine（每 heartbeatIntervalMs）
+5. 启动 poll loop（主 goroutine 或 worker pool）
+6. --daemon 时写 agent.pid，父进程退出
+7. 监听 SIGINT/SIGTERM → 优雅退出（等待 running 任务完成或超时）
 ```
 
 ## 5. Agent Runtime 设计
@@ -292,9 +304,12 @@ query { viewer { orgId } }
 ## 13. MVP 实现顺序建议
 
 1. config + fingerprint + capability probe
-2. graphql client + register
-3. executor（shell, script）+ event reporter
-4. agent runtime（heartbeat + poll + task runner）
-5. artifact uploader
-6. cobra commands + daemon 模式
-7. 交叉编译 + install script
+2. graphql client + `login`（registerDevice）
+3. `status`（本地态）
+4. executor（shell, script）+ event reporter
+5. agent runtime（heartbeat + poll + task runner）
+6. `start` / `stop` + daemon 模式
+7. artifact uploader
+8. `status --refresh` + 交叉编译 + install script
+
+命令级契约见 [CLI 命令设计](./cli-commands.md)。

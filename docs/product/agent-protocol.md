@@ -59,20 +59,22 @@ sequenceDiagram
 ## 4. CLI 命令
 
 ```bash
-# 注册设备（使用 registration token）
-builddock-agent register --token reg_xxx --name "my-macbook"
+# 登录：注册设备（使用 registration token）
+builddock login --token reg_xxx --name "my-macbook"
 
-# 启动 Agent 守护进程
-builddock-agent start
+# 开启 Agent 运行时
+builddock start --daemon
 
-# 查看本地状态
-builddock-agent status
+# 查看状态
+builddock status --refresh
 
 # 停止
-builddock-agent stop
+builddock stop
 ```
 
-### 4.1 register
+完整参数与退出码见 [CLI 命令设计](../architecture/cli-commands.md)。
+
+### 4.1 login
 
 1. 采集本机 fingerprint
 2. 探测 handlers、runtimes

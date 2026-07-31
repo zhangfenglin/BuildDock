@@ -175,7 +175,8 @@ npm run codegen   # graphql-codegen --config codegen.ts
 ```text
 curl -fsSL ... | bash -s -- --token reg_xxx
 # 或
-builddock-agent register --token reg_xxx --name my-pc
+builddock login --token reg_xxx --name my-pc
+builddock start --daemon
 ```
 
 ### 6.3 TaskCreate
