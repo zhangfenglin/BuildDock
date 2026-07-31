@@ -23,7 +23,7 @@ BuildDock 是一个**用户设备注册 + 远程任务调度 + CLI Agent 执行 
 | [架构设计索引](./architecture/README.md) | 技术栈、文档导航 |
 | [Monorepo 结构](./architecture/monorepo.md) | 仓库目录与模块划分 |
 | [后端架构（Go）](./architecture/backend.md) | gqlgen、分层、调度器 |
-| [CLI 命令设计](./architecture/cli-commands.md) | login / remote-control / status |
+| [CLI 命令设计](./architecture/cli-commands.md) | login / start / stop / status |
 | [CLI 架构（Go）](./architecture/cli.md) | Agent Runtime、Executor |
 | [前端架构（Vite + TS）](./architecture/frontend.md) | Dashboard、urql |
 | [数据库设计](./architecture/database.md) | PostgreSQL 总览 |

@@ -26,7 +26,7 @@ sequenceDiagram
     S-->>A: deviceToken, deviceId
     A->>A: 写入 ~/.builddock/config.yaml
     Web->>S: mutation approveDevice
-    Note over A: builddock remote-control start
+    Note over A: builddock start --daemon
     A->>S: mutation reportCapabilities
     A->>S: mutation heartbeat (loop)
 ```
@@ -122,7 +122,7 @@ Domain 层枚举与 GraphQL enum 值一致（SCREAMING_SNAKE_CASE）。
 □ npm run dev（web）
 □ builddock login --token <reg_xxx>
 □ Web 审批设备
-□ builddock remote-control start --daemon
+□ builddock start --daemon
 □ builddock status --refresh
 □ Web 创建 shell 任务 → TaskDetail 看日志
 □ 验证产物上传与 complete

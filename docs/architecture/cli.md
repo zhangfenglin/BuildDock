@@ -15,17 +15,18 @@
 
 ## 2. 进程架构
 
-用户侧 CLI 暴露三个顶层命令：`login`、`remote-control`、`status`。详见 [CLI 命令设计](./cli-commands.md)。
+用户侧 CLI 顶层命令：`login`、`start` / `stop` / `restart`、`status`。详见 [CLI 命令设计](./cli-commands.md)。
 
 ```mermaid
 flowchart TB
     subgraph AgentProcess["builddock"]
         Main[main / cobra]
         Main --> Login[login 命令]
-        Main --> RC[remote-control 命令]
+        Main --> Start[start 命令]
+        Main --> Stop[stop 命令]
         Main --> StatusCmd[status 命令]
 
-        RC -->|start| Runtime[Agent Runtime]
+        Start --> Runtime[Agent Runtime]
         Runtime --> HB[Heartbeat Loop]
         Runtime --> Poll[Poll Loop]
         Runtime --> Exec[Task Executor Pool]
@@ -54,10 +55,9 @@ cli/
 │   ├── cmd/
 │   │   ├── root.go
 │   │   ├── login.go
-│   │   ├── remote_control.go
-│   │   ├── remote_control_start.go
-│   │   ├── remote_control_stop.go
-│   │   ├── remote_control_restart.go
+│   │   ├── start.go
+│   │   ├── stop.go
+│   │   ├── restart.go
 │   │   ├── status.go
 │   │   └── version.go
 │   ├── config/
@@ -93,9 +93,9 @@ cli/
 | 命令 | 说明 |
 |------|------|
 | `builddock login` | 注册设备并写入本地凭据（原 `register`） |
-| `builddock remote-control start` | 启动 Agent 运行时（前台或 `--daemon`） |
-| `builddock remote-control stop` | 停止本地 Agent |
-| `builddock remote-control restart` | 重启 Agent |
+| `builddock start` | 启动 Agent 运行时（前台或 `--daemon`） |
+| `builddock stop` | 停止本地 Agent |
+| `builddock restart` | 重启 Agent |
 | `builddock status` | 登录态、运行态、连通性 |
 | `builddock version` | 版本信息 |
 
@@ -110,10 +110,10 @@ cli/
 4. client.RegisterDevice(input)   # GraphQL registerDevice
 5. 写入 config.yaml（device_id, device_token, graphql_url）
 6. 提示：等待管理员 approve（若 approvalStatus=PENDING）
-7. 提示下一步：builddock remote-control start
+7. 提示下一步：builddock start --daemon
 ```
 
-### 4.2 remote-control start 流程
+### 4.2 start 流程
 
 ```
 1. 校验已 login（config.yaml 含 device_token）
@@ -308,7 +308,7 @@ query { viewer { orgId } }
 3. `status`（本地态）
 4. executor（shell, script）+ event reporter
 5. agent runtime（heartbeat + poll + task runner）
-6. `remote-control start/stop` + daemon 模式
+6. `start` / `stop` + daemon 模式
 7. artifact uploader
 8. `status --refresh` + 交叉编译 + install script
 

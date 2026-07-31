@@ -2,15 +2,15 @@
 
 Schema Version: `1.0`
 
-BuildDock 用户侧 CLI 以 **`builddock`** 为二进制名（构建产物可仍称 `builddock-agent`，见 [Monorepo](./monorepo.md)）。面向用户的顶层命令仅三个：
+BuildDock 用户侧 CLI 以 **`builddock`** 为二进制名（构建产物可仍称 `builddock-agent`，见 [Monorepo](./monorepo.md)）。
 
 | 命令 | 职责 |
 |------|------|
 | `login` | 将本机接入平台：认证、注册设备、写入本地凭据 |
-| `remote-control` | 启停 Agent 运行时，使平台可远程下发并执行任务 |
-| `status` | 查看登录态、守护进程态、与服务端的连通性 |
+| `start` / `stop` / `restart` | 启停 Agent 运行时，使平台可远程下发并执行任务 |
+| `status` | 查看登录态、Agent 运行态、与服务端的连通性 |
 
-另保留 **`version`** 作为辅助命令（版本与兼容性信息），不计入核心业务三命令。
+另保留 **`version`** 作为辅助命令（版本与兼容性信息）。
 
 > 本文只描述命令契约与行为，**不包含实现代码**。运行时、Executor、GraphQL Client 等见 [CLI 架构](./cli.md)。
 
@@ -20,10 +20,10 @@ BuildDock 用户侧 CLI 以 **`builddock`** 为二进制名（构建产物可仍
 
 | 原则 | 说明 |
 |------|------|
-| 三命令模型 | 用户心智：`登录 → 开启远程控制 → 随时查看状态` |
-| 出站连接 | `remote-control` 运行后 Agent 主动连平台，设备无需开放入站端口 |
-| 凭据与运行时分离 | `login` 写凭据；`remote-control` 消费凭据；二者可独立执行 |
-| 幂等与可恢复 | 重复 `login`（同 machineId）走 upsert；`remote-control stop` 可安全多次调用 |
+| 扁平命令 | `start` / `stop` 等为顶层命令，无 `remote-control` 父命令 |
+| 出站连接 | Agent 运行后主动连平台，设备无需开放入站端口 |
+| 凭据与运行时分离 | `login` 写凭据；`start` 消费凭据；二者可独立执行 |
+| 幂等与可恢复 | 重复 `login`（同 machineId）走 upsert；`stop` 可安全多次调用 |
 | 可脚本化 | 全命令支持 `--json`；非零 exit code 表示失败 |
 
 ### 1.1 与旧命令映射
@@ -31,11 +31,11 @@ BuildDock 用户侧 CLI 以 **`builddock`** 为二进制名（构建产物可仍
 | 旧命令（草案） | 新命令 |
 |----------------|--------|
 | `register` | `login` |
-| `start` | `remote-control start` |
-| `stop` | `remote-control stop` |
+| `start` | `start` |
+| `stop` | `stop` |
 | `status` | `status`（增强） |
 
-GraphQL 层不变：`login` 仍调用 `registerDevice`；`remote-control start` 仍走 heartbeat / pollTask 循环。
+GraphQL 层不变：`login` 仍调用 `registerDevice`；`start` 仍走 heartbeat / pollTask 循环。
 
 ---
 
@@ -45,8 +45,8 @@ CLI 依赖三类本地文件，命令间通过它们协作：
 
 ```
 ~/.builddock/
-├── config.yaml          # login 写入；remote-control / status 读取
-├── agent.pid            # remote-control start --daemon 写入
+├── config.yaml          # login 写入；start / status 读取
+├── agent.pid            # start --daemon 写入
 ├── agent.sock           # 可选：本机 IPC（V1.1，stop / status 查询）
 └── spool/               # 事件离线缓冲（V1.1）
 ```
@@ -86,8 +86,8 @@ cli_version: "0.1.0"
 | 字段 | 写入者 | 说明 |
 |------|--------|------|
 | `device_token` | `login` | Device Token，见 [认证](./auth.md) |
-| `approval_status` | `login` + `status`（刷新） | 未 APPROVED 时 remote-control 可启动但 poll 可能无任务 |
-| `poll_interval_ms` 等 | `login` | 服务端策略，remote-control 遵循 |
+| `approval_status` | `login` + `status`（刷新） | 未 APPROVED 时 Agent 可启动但 poll 可能无任务 |
+| `poll_interval_ms` 等 | `login` | 服务端策略，Runtime 遵循 |
 
 文件权限 **`0600`**。Token 禁止写入环境变量或日志。
 
@@ -97,8 +97,8 @@ cli_version: "0.1.0"
 |------|------|----------|
 | `not_logged_in` | 无有效 config | 缺 `device_token` |
 | `logged_in` | 已登录 | config 完整 |
-| `remote_control_stopped` | 已登录但 Agent 未运行 | 无 PID / 进程不存在 |
-| `remote_control_running` | Agent 守护进程活跃 | PID 存活 + 可选 heartbeat 成功 |
+| `agent_stopped` | 已登录但 Agent 未运行 | 无 PID / 进程不存在 |
+| `agent_running` | Agent 守护进程活跃 | PID 存活 + 可选 heartbeat 成功 |
 
 ---
 
@@ -153,7 +153,7 @@ sequenceDiagram
     alt 成功
         GQL-->>CLI: deviceId, deviceToken, intervals, approvalStatus
         CLI->>CLI: 写入 ~/.builddock/config.yaml (0600)
-        CLI-->>U: 成功提示 + 下一步 remote-control start
+        CLI-->>U: 成功提示 + 下一步 builddock start
     else token 无效 / 过期
         GQL-->>CLI: UNAUTHENTICATED
         CLI-->>U: exit 3
@@ -193,7 +193,7 @@ mutation LoginRegister($input: RegisterDeviceInput!) {
 ```
 ✓ 设备已注册: macbook-pro-m3 (dev_01JABC...)
   审批状态: PENDING — 请在控制台批准后再接收任务
-  下一步: builddock remote-control start
+  下一步: builddock start --daemon
 ```
 
 **JSON（`--json`）：**
@@ -220,7 +220,7 @@ mutation LoginRegister($input: RegisterDeviceInput!) {
 
 ---
 
-## 4. `remote-control`
+## 4. Agent 运行时命令（`start` / `stop` / `restart`）
 
 ### 4.1 用途
 
@@ -231,29 +231,29 @@ mutation LoginRegister($input: RegisterDeviceInput!) {
 - `pollTask` 长轮询与任务执行
 - 产物上传与 `completeTask`
 
-即：开启后平台可「远程控制」本机执行 Agent 任务。
+`start` 成功后，平台可向本机下发并执行任务。
 
 ### 4.2 语法
 
 ```bash
-builddock remote-control <subcommand> [flags]
+builddock start [flags]
+builddock stop [flags]
+builddock restart [flags]
 ```
 
-| 子命令 | 说明 |
-|--------|------|
-| `start` | 启动 Agent（前台或守护进程） |
-| `stop` | 停止本地 Agent |
-| `restart` | stop + start（守护进程场景） |
-
-无子命令时打印用法并以 exit `2` 退出。
-
-### 4.3 前置条件
+### 4.3 前置条件（`start` / `restart`）
 
 - 必须先 `login`（存在有效 `config.yaml` 与 `device_token`）
 - `approval_status=REJECTED` 时：`start` 拒绝并提示联系管理员
 - `PENDING` 时：允许 `start`（便于 heartbeat 与 capability 上报），但可能长时间 poll 不到任务
 
-### 4.4 `remote-control start`
+### 4.4 `start`
+
+#### 语法
+
+```bash
+builddock start [flags]
+```
 
 #### Flags
 
@@ -304,7 +304,13 @@ Runtime 行为见 [CLI 架构 §5](./cli.md#5-agent-runtime-设计)。
 3. 刷新 event spool（若有）
 4. 删除 PID 文件
 
-### 4.5 `remote-control stop`
+### 4.5 `stop`
+
+#### 语法
+
+```bash
+builddock stop [flags]
+```
 
 #### Flags
 
@@ -321,9 +327,17 @@ Runtime 行为见 [CLI 架构 §5](./cli.md#5-agent-runtime-设计)。
 
 前台 `start` 场景：提示用户在对应终端 Ctrl+C（无法跨会话 stop）。
 
-### 4.6 `remote-control restart`
+### 4.6 `restart`
 
-等价于 `stop`（忽略未运行）+ `start --daemon`（保留原 daemon 标志需 V1.1 记录；MVP 默认 restart 使用 daemon）。
+#### 语法
+
+```bash
+builddock restart [flags]
+```
+
+等价于 `stop`（忽略未运行）+ `start --daemon`（MVP 默认 daemon；V1.1 可记录上次 daemon 标志）。
+
+继承 `start` / `stop` 的 flags（如 `--timeout`、`--max-tasks`）。
 
 ### 4.7 GraphQL（运行时）
 
@@ -337,14 +351,14 @@ Runtime 行为见 [CLI 架构 §5](./cli.md#5-agent-runtime-设计)。
 
 ### 4.8 退出码
 
-| Code | 含义 |
-|------|------|
-| 0 | 成功 |
-| 1 | 一般错误 |
-| 5 | 未 login |
-| 6 | Agent 已在运行（重复 start） |
-| 7 | 审批被拒绝 |
-| 8 | 与服务端版本不兼容（警告性，MVP 不阻断） |
+| Code | 命令 | 含义 |
+|------|------|------|
+| 0 | 全部 | 成功 |
+| 1 | 全部 | 一般错误 |
+| 5 | start / restart | 未 login |
+| 6 | start | Agent 已在运行（重复 start） |
+| 7 | start / restart | 审批被拒绝 |
+| 8 | start | 与服务端版本不兼容（警告性，MVP 不阻断） |
 
 ---
 
@@ -352,7 +366,7 @@ Runtime 行为见 [CLI 架构 §5](./cli.md#5-agent-runtime-设计)。
 
 ### 5.1 用途
 
-汇总 **登录态**、**remote-control 运行态**、**服务端连通性** 与 **设备在平台侧快照**，供用户与脚本诊断。
+汇总 **登录态**、**Agent 运行态**、**服务端连通性** 与 **设备在平台侧快照**，供用户与脚本诊断。
 
 ### 5.2 语法
 
@@ -377,7 +391,7 @@ builddock status [flags]
 | 本机版本 | 嵌入 `cli_version` |
 | 审批 / 在线状态 | 本地缓存；`--refresh` 时 Query |
 | 当前任务数 | 本地 Runtime 统计；`--refresh` 可选 Query |
-| 上次 heartbeat | 本地 Runtime 写入 config 侧车或内存（daemon 通过文件 `agent.state.json`） |
+| 上次 heartbeat | 本地 Runtime 写入侧车文件（daemon 通过 `agent.state.json`） |
 
 V1.1 可增加 `~/.builddock/agent.state.json`（Runtime 周期写入，供 status 无 RPC 读取）。
 
@@ -420,11 +434,11 @@ BuildDock CLI 0.1.0
 服务端:   https://api.builddock.example.com/graphql
 审批:     APPROVED
 
-远程控制: 运行中 (pid 12345,  since 2h ago)
+Agent:    运行中 (pid 12345, since 2h ago)
 任务:     1 running / 3 max slots
 上次心跳: 12s ago (ok)
 
-提示: builddock remote-control stop
+提示: builddock stop
 ```
 
 **JSON：**
@@ -435,7 +449,7 @@ BuildDock CLI 0.1.0
   "deviceId": "dev_01JABC",
   "name": "macbook-pro-m3",
   "approvalStatus": "APPROVED",
-  "remoteControl": {
+  "agent": {
     "running": true,
     "pid": 12345,
     "since": "2026-07-30T10:00:00Z",
@@ -459,7 +473,7 @@ BuildDock CLI 0.1.0
 | 10 | 未 login |
 | 11 | 已 login 但 Agent 未运行（仅警告性，仍可用 0 + 输出说明；若需脚本区分则用 `--json` 字段） |
 
-> 脚本建议：用 `--json` 解析 `loggedIn` / `remoteControl.running`，勿依赖 exit 11。
+> 脚本建议：用 `--json` 解析 `loggedIn` / `agent.running`，勿依赖 exit 11。
 
 ---
 
@@ -470,10 +484,10 @@ stateDiagram-v2
     [*] --> LoggedOut: 初始
     LoggedOut --> LoggedIn: login
     LoggedIn --> LoggedOut: 删除 config / 未来 logout
-    LoggedIn --> RCStopped: login 完成
-    RCStopped --> RCRunning: remote-control start
-    RCRunning --> RCStopped: remote-control stop / SIGTERM
-    RCRunning --> RCRunning: 执行任务 heartbeat poll
+    LoggedIn --> AgentStopped: login 完成
+    AgentStopped --> AgentRunning: start
+    AgentRunning --> AgentStopped: stop / SIGTERM
+    AgentRunning --> AgentRunning: 执行任务 heartbeat poll
 ```
 
 典型用户旅程：
@@ -484,8 +498,8 @@ builddock login --token reg_xxx --name "office-linux"
 
 # 2. 管理员 Web 批准设备
 
-# 3. 开启远程控制（生产常用 daemon）
-builddock remote-control start --daemon
+# 3. 启动 Agent（生产常用 daemon）
+builddock start --daemon
 
 # 4. 随时检查
 builddock status --refresh
@@ -498,18 +512,17 @@ builddock status --refresh
 ```
 cli/internal/cmd/
 ├── root.go
-├── login.go              # login
-├── remote_control.go     # remote-control 父命令
-├── remote_control_start.go
-├── remote_control_stop.go
-├── remote_control_restart.go
+├── login.go
+├── start.go
+├── stop.go
+├── restart.go
 ├── status.go
 └── version.go
 ```
 
 `login` 依赖：`config`、`fingerprint`、`capability`、`client`（registerDevice）。
 
-`remote-control` 依赖：`config`、`client`、`agent/runtime`、`executor`、`artifact`。
+`start` / `stop` / `restart` 依赖：`config`、`client`、`agent/runtime`、`executor`、`artifact`。
 
 `status` 依赖：`config`、可选 `client`（refresh）、本地 PID/state。
 
@@ -522,7 +535,7 @@ Web「添加设备」页应展示：
 ```bash
 curl -fsSL https://get.builddock.example.com/install.sh | sh
 builddock login --token <REG_TOKEN> --name "<DEVICE_NAME>"
-builddock remote-control start --daemon
+builddock start --daemon
 builddock status
 ```
 
@@ -535,9 +548,9 @@ Registration Token 一次性；过期后需重新生成并 `login --force`。
 | 项 | 说明 |
 |----|------|
 | login | 仅持有 `reg_` 者可注册；token 泄露窗口短 |
-| remote-control | 持有 device config 的用户可启动 Agent；任务执行受平台 RBAC + trustLevel 约束 |
+| start | 持有 device config 的用户可启动 Agent；任务执行受平台 RBAC + trustLevel 约束 |
 | 多用户机器 | config 属当前 OS 用户；不建议共享 `~/.builddock` |
-| 卸载 | 停止 Agent + 删除 `~/.builddock` + Web 上 revoke device |
+| 卸载 | `builddock stop` + 删除 `~/.builddock` + Web 上 revoke device |
 
 ---
 
@@ -545,8 +558,8 @@ Registration Token 一次性；过期后需重新生成并 `login --force`。
 
 1. `config` 读写 + `login`（registerDevice）
 2. `status`（仅本地，无 refresh）
-3. `remote-control start` 前台 + Runtime 最小闭环
-4. `remote-control stop` / `--daemon` + PID
+3. `start` 前台 + Runtime 最小闭环
+4. `stop` / `--daemon` + PID
 5. `status --refresh`（heartbeat 捎带）
 6. 安装脚本与 Web 指引文案对齐
 

@@ -161,7 +161,7 @@ MVP 推荐 **模式 A**，减少组件。
 2. 下载对应 builddock-agent 二进制
 3. 写入 /usr/local/bin
 4. builddock login --token $TOKEN
-5. builddock remote-control start --daemon
+5. builddock start --daemon
 5. 安装 systemd/launchd service（可选）
 ```
 

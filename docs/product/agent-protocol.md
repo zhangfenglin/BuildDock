@@ -62,14 +62,14 @@ sequenceDiagram
 # 登录：注册设备（使用 registration token）
 builddock login --token reg_xxx --name "my-macbook"
 
-# 开启远程控制（Agent 运行时）
-builddock remote-control start --daemon
+# 开启 Agent 运行时
+builddock start --daemon
 
 # 查看状态
 builddock status --refresh
 
 # 停止
-builddock remote-control stop
+builddock stop
 ```
 
 完整参数与退出码见 [CLI 命令设计](../architecture/cli-commands.md)。
@@ -81,7 +81,7 @@ builddock remote-control stop
 3. 调用 `registerDevice` mutation
 4. 将 `deviceToken` 写入本地配置（`~/.builddock/config.yaml`）
 
-### 4.2 remote-control start
+### 4.2 start
 
 1. 加载本地配置
 2. 调用 `reportCapabilities` mutation

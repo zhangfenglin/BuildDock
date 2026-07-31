@@ -176,7 +176,7 @@ npm run codegen   # graphql-codegen --config codegen.ts
 curl -fsSL ... | bash -s -- --token reg_xxx
 # 或
 builddock login --token reg_xxx --name my-pc
-builddock remote-control start --daemon
+builddock start --daemon
 ```
 
 ### 6.3 TaskCreate
