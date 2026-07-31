@@ -418,12 +418,17 @@ log_level: info
 
 ## 10. 安全
 
+Agent 侧须落实 [安全架构](../architecture/security.md#4-执行面cli-agent) 与 [安全要求](./security.md) MVP 清单。
+
 | 措施 | 说明 |
 |------|------|
-| Token 存储 | 本地文件权限 0600 |
-| Secrets | 来自 `resolvedSecrets`，仅在内存中，完成后清零 |
+| Token 存储 | 本地文件权限 0600；不进 env、不写日志 |
+| Secrets | `resolvedSecrets` 仅任务执行期在内存；完成后清零 |
+| 不受信任务 | `trustLevel=UNTRUSTED` → 拒绝（MVP 仅 TRUSTED） |
+| 工作目录 | 限定在 Agent workspace；防路径穿越 |
+| 环境变量 | 默认不继承用户 shell；仅 spec.env + resolvedSecrets |
 | 命令执行 | MVP 直接 shell；V2 sandbox |
-| 不受信任务 | `trustLevel=UNTRUSTED` 时 Agent 可拒绝 |
+| 风险提示 | 首次 `start` 输出风险摘要（见安全要求 §5） |
 
 ## 11. MVP 裁剪
 

@@ -53,7 +53,7 @@ Capability 分三层：
 | `org_id` | string | 所属组织 |
 | `name` | string | 用户可读名称 |
 | `status` | enum | `pending` / `online` / `offline` / `draining` / `revoked` |
-| `approval_status` | enum | `pending` / `approved` / `rejected` |
+| `approval_status` | enum | `pending` / `approved` / `rejected`；**新注册默认 `pending`，须审批后方可接任务** |
 | `fingerprint` | object | 机器指纹，防 token 复用 |
 | `agent` | object | Agent 版本与连接信息 |
 | `labels` | object | 静态标签，用于路由 |
@@ -169,6 +169,16 @@ Variables：
   }
 }
 ```
+
+### 3.4 审批策略（安全）
+
+| 规则 | MVP 默认 |
+|------|----------|
+| 新注册 `approval_status` | `PENDING` |
+| 未审批设备接收任务 | **禁止**（Scheduler 跳过） |
+| 组织 `require_device_approval` | `true`（dev 可关） |
+
+审批流程：`registerDevice` → Web `approveDevice` → 设备可参与 Placement。见 [安全要求](./security.md#4-产品与策略默认值)。
 
 ## 4. Capability Report
 

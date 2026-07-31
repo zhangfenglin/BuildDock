@@ -170,13 +170,15 @@ npm run codegen   # graphql-codegen --config codegen.ts
 
 - 表格：name、status、labels、lastSeen、availableSlots
 - 操作：approve / reject / revoke
-- 「生成注册 Token」→ 展示一次性 token + 安装命令
+- 「生成注册 Token」→ 展示一次性 token + 安装命令 + **Agent 风险披露**（见 [安全要求 §5](../product/security.md#5-用户责任与披露)）
 
 ```text
 curl -fsSL ... | bash -s -- --token reg_xxx
 # 或
 builddock-agent register --token reg_xxx --name my-pc
 ```
+
+> MVP：API Key 存 localStorage 仅用于 dev；生产使用 OAuth（V1.1）。见 [安全架构 §5](./security.md#5-web-dashboard)。
 
 ### 6.3 TaskCreate
 

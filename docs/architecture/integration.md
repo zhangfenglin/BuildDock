@@ -123,13 +123,18 @@ Domain 层枚举与 GraphQL enum 值一致（SCREAMING_SNAKE_CASE）。
 □ builddock-agent start
 □ Web 创建 shell 任务 → TaskDetail 看日志
 □ 验证产物上传与 complete
+□ 确认未审批设备无法被 assign 任务（安全 MVP #1）
+□ 确认 UNTRUSTED 任务被拒绝（安全 MVP #7）
 ```
+
+完整安全检查项见 [安全要求](../product/security.md#3-分阶段接入措施)。
 
 ## 9. 相关文档
 
 - [Monorepo 结构](./monorepo.md)
 - [后端架构](./backend.md)
 - [CLI 架构](./cli.md)
+- [安全架构](./security.md)
 - [前端架构](./frontend.md)
 - [基础设施](./infrastructure.md)
 - [GraphQL API 概览](../product/api-overview.md)

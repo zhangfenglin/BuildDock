@@ -88,7 +88,7 @@ flowchart TB
 | `artifacts/{org_id}/{task_id}/{name}` | 任务产物 |
 | `logs/{org_id}/{task_id}/stdout.log` | 大日志归档（可选） |
 
-预签名 URL 有效期：上传 15min，下载 1h。
+预签名 URL 有效期：上传 15min，下载 1h。下载须校验 org / task 归属，bucket 禁止 public。详见 [安全架构 §6](./security.md#6-基础设施)。
 
 ## 4. 网络与安全
 

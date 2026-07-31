@@ -112,11 +112,13 @@ Device Token 操作校验：
 ## 6. Web Dashboard 认证（MVP）
 
 ```
-用户输入 API Key
+用户输入 API Key（仅建议 dev 环境）
   → localStorage.setItem('builddock_api_key', key)
   → query { viewer { orgId } } 验证
   → 失败则清除
 ```
+
+> **安全要求**：生产环境应使用 OAuth Session（V1.1），API Key 仅用于 CI / 机器调用。见 [安全要求](../product/security.md#4-产品与策略默认值)。
 
 V1.1 OAuth2：
 
@@ -177,9 +179,14 @@ MVP 可无 secrets 表，env 直接写在 spec（不推荐生产）。
 | device.registered / approved / revoked | audit_logs |
 | task.created / cancelled | audit_logs |
 
-MVP：结构化 slog 足够。
+MVP：结构化 slog 足够。事件清单见 [安全架构 §7](./security.md#7-审计与检测)。
 
-## 12. 实现位置（Go）
+## 12. 相关文档
+
+- [安全架构](./security.md) — 纵深防御、组件措施、审计
+- [安全要求](../product/security.md) — 产品侧分阶段清单
+
+## 13. 实现位置（Go）
 
 ```
 backend/internal/auth/

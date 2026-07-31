@@ -13,6 +13,7 @@ BuildDock 是一个**用户设备注册 + 远程任务调度 + CLI Agent 执行 
 | [Device Capability 模型](./product/device-capability.md) | 设备注册、能力上报、心跳、标签 |
 | [Task Schema](./product/task-schema.md) | 通用任务结构、类型、状态机、结果 |
 | [Agent 协议](./product/agent-protocol.md) | CLI Agent 与平台的交互协议 |
+| [安全要求](./product/security.md) | 威胁模型、分阶段措施、策略默认值 |
 | [GraphQL API 概览](./product/api-overview.md) | GraphQL Query / Mutation / Subscription |
 | [GraphQL Schema](../api/graphql-schema.graphql) | 完整 Schema 定义文件 |
 
@@ -30,6 +31,7 @@ BuildDock 是一个**用户设备注册 + 远程任务调度 + CLI Agent 执行 
 | [JSONB 结构约定](./architecture/database-jsonb.md) | JSON 格式约定 |
 | [sqlc 查询目录](./architecture/database-queries.md) | Repository SQL |
 | [认证与授权](./architecture/auth.md) | Token、RBAC |
+| [安全架构](./architecture/security.md) | 纵深防御、组件措施、审计 |
 | [调度器设计](./architecture/scheduler.md) | Placement、Lease |
 | [基础设施与部署](./architecture/infrastructure.md) | Docker、CI/CD |
 | [端到端集成](./architecture/integration.md) | 三端协作与联调 |

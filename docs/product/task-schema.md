@@ -103,6 +103,8 @@ Task
 | `untrusted` | 外部 Agent 下发，需 sandbox | V2 |
 | `system` | 平台维护任务 | V2 |
 
+MVP 服务端与 Agent **均须拒绝** `untrusted` / `system`。安全策略见 [安全要求](./security.md#3-分阶段接入措施)。
+
 ## 4. Placement（调度约束）
 
 ```json
@@ -153,6 +155,15 @@ Task
 | `least_loaded` | 负载最低（默认） |
 | `capability_score` | 软标签 + 资源综合打分 |
 | `round_robin` | 组内轮询 |
+
+### 4.3 安全隔离（MVP）
+
+`required_labels` 不仅是路由优化，更是**安全边界**：任务只能落到标签匹配的设备。例如：
+
+- 生产任务：`required_labels.env = prod`
+- 个人笔记本：`labels.tier = personal` → 不应匹配生产 placement
+
+Scheduler 须跳过 `approval_status != APPROVED` 的设备。详见 [安全架构 §3.2](../architecture/security.md#32-设备审批mvp)。
 | `sticky` | 同 idempotency_key / session 尽量同设备 |
 
 ## 5. TaskRuntime（可变）
