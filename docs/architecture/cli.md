@@ -263,13 +263,20 @@ labels:
 
 ## 10. 安全
 
+完整清单见 [安全架构](./security.md) 与 [安全要求](../product/security.md)。Agent 侧 MVP 必做：
+
 | 项 | 措施 |
 |----|------|
 | Token | 仅 config 文件，0600 |
 | Secrets | `resolvedSecrets` 仅任务执行期在内存 |
-| 命令注入 | 不拼接 shell；使用 `exec.CommandContext` + 参数分离 |
-| 不受信任务 | `trustLevel=UNTRUSTED` 默认拒绝（MVP 仅 TRUSTED） |
-| 工作目录 | 限制在 `working_dir` 下，防路径穿越 |
+| 命令注入 | 不拼接 shell；`exec.CommandContext` + 参数分离 |
+| 不受信任务 | `trustLevel=UNTRUSTED` 默认拒绝 |
+| 工作目录 | 每任务独立 workspace；防路径穿越 |
+| 环境变量 | 默认不继承用户 shell |
+| 超时 | `spec.timeout` → kill 进程树 |
+| 非 root | 文档建议以普通 OS 用户运行 Agent |
+
+V2：sandbox 包装 Executor，见 [安全架构 §4.4](./security.md#44-sandboxv2)。
 
 ## 11. 跨平台
 

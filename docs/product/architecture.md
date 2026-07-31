@@ -171,14 +171,20 @@ Agent mutation pollTask（服务端长轮询）
 
 ## 5. 安全架构
 
-| 层级 | 措施 |
-|------|------|
-| 传输 | 全程 TLS |
-| 认证 | API Key / Device Token / Registration Token |
-| 设备 | 指纹绑定、可选人工审批 |
-| 任务 | trust_level、secrets 按任务注入、用后销毁 |
-| 执行 | MVP 仅 trusted；V2 增加 sandbox |
-| 审计 | 任务创建、设备注册、执行结果全链路记录 |
+BuildDock 允许经授权 API 在用户设备执行命令，须按 [安全要求](./security.md) 与 [安全架构](../architecture/security.md) 分阶段接入控制措施。
+
+| 层级 | MVP 措施 |
+|------|----------|
+| 传输 | 全程 TLS；Agent 仅出站 443 |
+| 认证 | API Key / Device Token / Registration Token；哈希存储 |
+| 设备 | 指纹绑定；**默认 PENDING 人工审批** |
+| 授权 | org 隔离 + RBAC；Placement labels 作隔离边界 |
+| 任务 | 仅 `TRUSTED`；`secretRefs` 按需注入、用后销毁 |
+| 执行 | working_dir 隔离；Agent 拒绝 UNTRUSTED |
+| 审计 | 关键事件结构化 slog；rate limit |
+
+V1.1 起：scoped API Key、OAuth Web、任务审批、Policy 引擎、secrets 加密。  
+V2 起：`UNTRUSTED` + sandbox。详见 [安全要求 §3](./security.md#3-分阶段接入措施)。
 
 ## 6. 部署拓扑（MVP）
 

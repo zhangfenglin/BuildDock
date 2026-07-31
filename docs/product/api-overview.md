@@ -469,6 +469,8 @@ X-BuildDock-Event: task.completed
 
 签名：`HMAC-SHA256(webhook_secret, request_body)`
 
+V1.1 增加 `X-BuildDock-Timestamp` 与 nonce 防重放，见 [安全架构 §8](../architecture/security.md#8-webhook-安全v11)。
+
 ## 12. 速率限制
 
 | 操作 | 限制 |

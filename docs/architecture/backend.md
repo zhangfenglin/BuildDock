@@ -233,7 +233,7 @@ flowchart TD
     OAuth --> Ctx
 ```
 
-Resolver 通过 `auth.SubjectFromContext(ctx)` 获取调用方，Service 层做权限校验。
+Resolver 通过 `auth.SubjectFromContext(ctx)` 获取调用方，Service 层做权限校验。任务创建校验链、设备审批、审计事件见 [安全架构 §3](./security.md#3-控制面backend)。
 
 ## 7. GraphQL 特定设计
 
@@ -318,9 +318,10 @@ model:
 1. config + domain + migrations
 2. repository（device, task）
 3. auth（api key, device token）
-4. service（device, task, agent）
+4. service（device, task, agent）+ createTask 安全校验链
 5. gqlgen resolver（Query/Mutation）
-6. scheduler worker
+6. scheduler worker（跳过未 APPROVED 设备）
 7. eventbus + Subscription
+8. audit slog（见 [安全架构 §7](./security.md#7-审计与检测)）
 8. artifact + S3
 9. webhook dispatcher

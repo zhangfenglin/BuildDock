@@ -17,6 +17,7 @@ BuildDock 采用 **Monorepo** 组织，后端与 CLI 使用 **Go**，前端使�
 | [sqlc 查询目录](./database-queries.md) | Repository 查询与事务 |
 | [Init DDL](./migrations/000001_init.sql) | 完整初始化 SQL |
 | [认证与授权](./auth.md) | Token 模型、RBAC、限流 |
+| [安全架构](./security.md) | 纵深防御、组件措施、审计 |
 | [调度器设计](./scheduler.md) | Placement 匹配、Lease、后台 Worker |
 | [端到端集成](./integration.md) | 三端协作链路、联调清单 |
 

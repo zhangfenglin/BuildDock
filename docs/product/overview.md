@@ -91,6 +91,7 @@ BuildDock 提供统一的**控制面**，连接「任意触发源」与「用户
 | 结果 | exit_code、stdout/stderr、artifacts |
 | 事件 | `status_changed`、`log` |
 | 信任级别 | 仅 `trusted` |
+| 安全 | 见 [安全要求](./security.md) MVP 16 项 |
 | 触发 | GraphQL API + Webhook |
 | 客户端 | CLI Agent + Web Dashboard |
 
@@ -102,7 +103,7 @@ BuildDock 提供统一的**控制面**，连接「任意触发源」与「用户
 | Placement | 完整 `capability_match` + 多种 strategy |
 | 客户端 | Mobile App |
 | 集成 | MCP Server |
-| 安全 | `untrusted` 任务 + sandbox |
+| 安全 | `untrusted` 任务 + sandbox；见 [安全要求](./security.md) V2 |
 | 编排 | `composite` 多步任务 |
 
 ## 8. 成功指标（MVP）
