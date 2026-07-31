@@ -22,9 +22,11 @@ sequenceDiagram
     S-->>Web: reg_xxx
     Note over Web: 展示安装命令
     A->>S: mutation registerDevice(reg_xxx)
+    Note over A: builddock login --token reg_xxx
     S-->>A: deviceToken, deviceId
     A->>A: 写入 ~/.builddock/config.yaml
     Web->>S: mutation approveDevice
+    Note over A: builddock remote-control start
     A->>S: mutation reportCapabilities
     A->>S: mutation heartbeat (loop)
 ```
@@ -99,7 +101,7 @@ Domain 层枚举与 GraphQL enum 值一致（SCREAMING_SNAKE_CASE）。
 |--------|-------|----------|------|
 | Web | API Key (MVP) | 用户粘贴 | localStorage |
 | 外部系统 | API Key | 管理后台生成 | 密钥管理器 |
-| Agent | Device Token | registerDevice | ~/.builddock/config.yaml |
+| Agent | Device Token | `builddock login` → registerDevice | ~/.builddock/config.yaml |
 | 注册 | Registration Token | createRegistrationToken | 一次性 |
 
 ## 7. 失败场景跨组件行为
@@ -118,9 +120,10 @@ Domain 层枚举与 GraphQL enum 值一致（SCREAMING_SNAKE_CASE）。
 □ docker compose up（PG + Redis + MinIO）
 □ make migrate && make run-server
 □ npm run dev（web）
-□ builddock-agent register --token <reg_xxx>
+□ builddock login --token <reg_xxx>
 □ Web 审批设备
-□ builddock-agent start
+□ builddock remote-control start --daemon
+□ builddock status --refresh
 □ Web 创建 shell 任务 → TaskDetail 看日志
 □ 验证产物上传与 complete
 ```
@@ -129,7 +132,7 @@ Domain 层枚举与 GraphQL enum 值一致（SCREAMING_SNAKE_CASE）。
 
 - [Monorepo 结构](./monorepo.md)
 - [后端架构](./backend.md)
-- [CLI 架构](./cli.md)
+- [CLI 命令设计](./cli-commands.md)
 - [前端架构](./frontend.md)
 - [基础设施](./infrastructure.md)
 - [GraphQL API 概览](../product/api-overview.md)

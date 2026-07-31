@@ -169,7 +169,7 @@ Agent 启动时可校验 Server 版本，不兼容时警告（不强制阻断 MV
 2. make migrate
 3. make run-server          # :8080/graphql
 4. make run-web             # :5173，proxy → :8080
-5. builddock-agent register + start
+5. builddock login + remote-control start
 ```
 
 ## 8. MVP 裁剪
